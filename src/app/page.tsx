@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import Login from '../components/Login';
 import AdminHeader from '../components/admin/AdminHeader';
 import AdmisionModulo from '../components/admin/AdmisionModulo';
@@ -31,7 +31,7 @@ export default function Home() {
 
       const emailNormalizado = user.email?.toLowerCase().trim() || '';
 
-      // Cuentas con rango administrativo y de dirección
+      // 1. Cuentas de Dirección y Administración directa por email
       if (
         emailNormalizado.includes('admin') || 
         emailNormalizado === 'admin@centrociap.com.ar' ||
@@ -46,12 +46,39 @@ export default function Home() {
       }
 
       try {
+        // 2. Consulta en la colección 'recepcionistas' (para Carolina y cualquier recepcionista creado en la tuerca)
+        const qRecep = query(
+          collection(db, 'recepcionistas'), 
+          where('email', '==', emailNormalizado)
+        );
+        const snapRecep = await getDocs(qRecep);
+        if (!snapRecep.empty) {
+          setRolUsuario('admin');
+          setVerificandoRol(false);
+          return;
+        }
+
+        // 3. Consulta en la colección 'usuarios' por UID o por email
         const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
         if (userDoc.exists() && userDoc.data()?.rol === 'admin') {
           setRolUsuario('admin');
-        } else {
-          setRolUsuario('profesional');
+          setVerificandoRol(false);
+          return;
         }
+
+        const qUsuarios = query(
+          collection(db, 'usuarios'), 
+          where('email', '==', emailNormalizado)
+        );
+        const snapUsuarios = await getDocs(qUsuarios);
+        if (!snapUsuarios.empty && snapUsuarios.docs.some(d => d.data()?.rol === 'admin')) {
+          setRolUsuario('admin');
+          setVerificandoRol(false);
+          return;
+        }
+
+        // 4. Si no está en recepción ni administración, accede al portal de profesional
+        setRolUsuario('profesional');
       } catch (error) {
         console.error('Error verificando rol en base de datos:', error);
         setRolUsuario('profesional');
@@ -89,7 +116,7 @@ export default function Home() {
     );
   }
 
-  // Vista General de Administración
+  // Vista General de Administración y Recepción
   return (
     <div className="min-h-screen bg-[#F7F5F0] text-[#1E2923] pb-12">
       <AdminHeader 

@@ -23,7 +23,7 @@ import {
   Profesional 
 } from '../types';
 
-// Nómina de profesionales con esquema unificado al 60% fijo
+// Nómina de referencia (solo como catálogo, ya no se auto-inserta en la base)
 export const PROFESIONALES_INICIALES: Omit<Profesional, 'id'>[] = [
   { nombre: 'Lic. Mariana Rossi', email: 'mariana.rossi@centrociap.com.ar', especialidad: 'Adultos - Psicoanálisis', diasAtencion: 'Lunes y Miércoles', horarios: '14:00 a 20:00 hs', modalidad: 'Presencial y Virtual', porcentajeHonorarios: 60 },
   { nombre: 'Lic. Esteban Gómez', email: 'esteban.gomez@centrociap.com.ar', especialidad: 'Niños y Adolescentes', diasAtencion: 'Martes y Jueves', horarios: '09:00 a 14:00 hs', modalidad: 'Solo Presencial', porcentajeHonorarios: 60 },
@@ -62,22 +62,10 @@ export const obtenerFechaHoraActual = (): string => {
   return `${fecha} · ${hora} hs`;
 };
 
-// --- SERVICIOS DE PROFESIONALES ---
+// --- SERVICIOS DE PROFESIONALES (RESPETA BORRADOS SIN RECREAR SEMILLAS) ---
 export const obtenerProfesionales = async (): Promise<Profesional[]> => {
   const snapshot = await getDocs(collection(db, 'profesionales'));
   
-  if (snapshot.empty) {
-    const listadoSemilla: Profesional[] = [];
-    for (const p of PROFESIONALES_INICIALES) {
-      const docRef = await addDoc(collection(db, 'profesionales'), {
-        ...p,
-        creadoEn: new Date().toISOString()
-      });
-      listadoSemilla.push({ id: docRef.id, ...p });
-    }
-    return listadoSemilla;
-  }
-
   return snapshot.docs.map(d => {
     const data = d.data();
     return {
@@ -189,7 +177,6 @@ export const actualizarPaciente = async (id: string, datos: Partial<Paciente>) =
   await updateDoc(docRef, datos);
 };
 
-// Reasignar paciente a otro profesional con registro automático en el hilo
 export const reasignarProfesionalPaciente = async (
   pacienteId: string, 
   nuevoProfesionalId: string, 
@@ -336,7 +323,7 @@ export const actualizarGasto = async (id: string, datos: Partial<Gasto>) => {
 };
 
 // --- SERVICIOS DE TALLERES DE MEMORIA (VIERNES, 1:30 HS) ---
-export const guardarTallerMemoria = async (taller: Omit<TallerMemoria, 'id' | 'fechaRegistro'>) => {
+export const guardarTallerMemoria = async (taller: any) => {
   const timestampHumano = obtenerFechaHoraActual();
   const docRef = await addDoc(collection(db, 'talleres_memoria'), {
     ...taller,
@@ -379,14 +366,15 @@ export const resetearDatosPrueba = async () => {
     }
   }
 };
-// --- MÓDULO PRIVADO Y EXCLUSIVO DIRECCIÓN / DUEÑA (DOBLE CANDADO) ---
+
+// --- MÓDULO PRIVADO Y EXCLUSIVO DIRECCIÓN / DUEÑA ---
 export interface MovimientoDireccion {
   id: string;
   tipo: 'Ingreso' | 'Egreso';
   subtipo: 'Paciente Propio' | 'Retiro CIAP' | 'Madre' | 'CIAP Extraordinario' | 'Cochera' | 'Deportes' | 'Supermercado' | 'Salud' | 'Salidas' | 'Varios';
   detalle: string;
   importe: number;
-  fecha: string; // YYYY-MM-DD
+  fecha: string;
   fechaRegistro: string;
   cuenta?: string;
 }
