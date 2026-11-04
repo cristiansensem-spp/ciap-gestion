@@ -122,10 +122,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
   }, [user]);
 
   const toggleColapsar = (id: string) => {
-    setTarjetasColapsadas(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
+    setTarjetasColapsadas(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const nombreMostrar = profesionalActual 
@@ -249,14 +246,14 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
         <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between py-2.5 sm:py-0 sm:h-16 gap-3">
             
-            {/* Identidad */}
+            {/* Identidad + Botón Salir en Móvil */}
             <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 sm:w-9 sm:h-9 bg-[#223D30] text-white rounded-xl flex items-center justify-center font-bold text-base sm:text-lg select-none shadow-2xs">
                   Ψ
                 </div>
                 <div className="leading-tight">
-                  <span className="text-sm sm:text-base font-bold text-[#1E2923] tracking-tight block truncate max-w-[200px] sm:max-w-none">
+                  <span className="text-sm sm:text-base font-bold text-[#1E2923] tracking-tight block truncate max-w-[190px] sm:max-w-none">
                     {nombreMostrar}
                   </span>
                   <span className="text-[10px] font-bold tracking-widest text-[#A8532F] uppercase block">
@@ -265,17 +262,29 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                 </div>
               </div>
 
-              {/* Botón Volver a Administración si es Sandra / Admin */}
-              {onVolverAdmin && (
+              {/* Botonera Móvil: Admin (si corresponde) y Salir siempre visible */}
+              <div className="flex items-center gap-1.5 sm:hidden">
+                {onVolverAdmin && (
+                  <button
+                    type="button"
+                    onClick={onVolverAdmin}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-[#223D30] text-white rounded-xl text-xs font-bold cursor-pointer shadow-2xs"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Admin</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  onClick={onVolverAdmin}
-                  className="sm:hidden flex items-center gap-1 px-2.5 py-1.5 bg-[#223D30] text-white rounded-xl text-xs font-bold cursor-pointer"
+                  onClick={() => logout()}
+                  title="Cerrar sesión"
+                  className="flex items-center gap-1 px-2.5 py-1.5 border border-[#DDD6CC] bg-[#FAF8F5] hover:bg-[#EFECE6] text-[#4A554E] hover:text-[#1E2923] text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-2xs"
                 >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Admin</span>
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Salir</span>
                 </button>
-              )}
+              </div>
             </div>
 
             {/* Pestañas de Navegación */}
@@ -320,6 +329,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
               </button>
             </nav>
 
+            {/* Botonera de Escritorio */}
             <div className="hidden sm:flex items-center gap-3 border-l border-[#E2DDD3] pl-4">
               {onVolverAdmin && (
                 <button
@@ -398,7 +408,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
         {pestañaActiva === 'sesiones' && (
           <div className="space-y-5">
             
-            {/* CARRUSEL DE NAVEGACIÓN SEMANAL (OPTIMIZADO PARA MÓVIL Y DESKTOP) */}
+            {/* CARRUSEL DE NAVEGACIÓN SEMANAL */}
             <div className="bg-white border border-[#E8E3DA] rounded-3xl p-4 sm:p-5 shadow-xs space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -456,7 +466,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                 </div>
               </div>
 
-              {/* TIRA DE DÍAS CON SWIPE TÁCTIL SIN CORTES (SNAP HORIZONTAL) */}
+              {/* TIRA DE DÍAS CON SWIPE TÁCTIL */}
               <div className="flex items-center gap-2 sm:gap-2.5 overflow-x-auto pb-2 pt-1 -mx-1 px-1 sm:mx-0 snap-x snap-mandatory scroll-smooth no-scrollbar">
                 {diasSemanaCalculados.map((item) => {
                   const esSeleccionado = item.iso === fechaSeleccionadaAgenda;
@@ -541,7 +551,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                     )}
                   </div>
 
-                  {/* CAMPOS FECHA Y HORA CON SEPARACIÓN ERGONÓMICA EN MÓVIL */}
+                  {/* CAMPOS FECHA Y HORA BIEN SEPARADOS */}
                   <div className="grid grid-cols-2 gap-3 sm:gap-4">
                     <div className="min-w-0">
                       <label className="block text-[10px] sm:text-[11px] font-bold uppercase text-[#3C4A42] mb-1">
@@ -783,11 +793,10 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
           </div>
         )}
 
-        {/* PESTAÑA 3: MIS LIQUIDACIONES Y AUDITORÍA DE SESIONES */}
+        {/* PESTAÑA 3: MIS LIQUIDACIONES (60%) */}
         {pestañaActiva === 'liquidaciones' && (
           <div className="space-y-6">
             
-            {/* 1. TRANSFERENCIAS REALIZADAS POR ADMINISTRACIÓN */}
             <div className="bg-white border border-[#E8E3DA] rounded-3xl p-5 sm:p-7 shadow-xs space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#F0EBE3]">
                 <div>
@@ -849,7 +858,6 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
               )}
             </div>
 
-            {/* 2. HISTORIAL DE SESIONES AUDITADAS Y SU ESTADO PARA EL VIERNES */}
             <div className="bg-white border border-[#E8E3DA] rounded-3xl p-5 sm:p-7 shadow-xs space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#F0EBE3]">
                 <div>
