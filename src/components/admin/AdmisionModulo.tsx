@@ -33,12 +33,12 @@ export default function AdmisionModulo() {
   const [cargando, setCargando] = useState(false);
   const [guardadoExito, setGuardadoExito] = useState(false);
 
-  // Formulario Nuevo Paciente
+  // Formulario Nuevo Paciente (Soporte Presencial, Virtual y Híbrido)
   const [nombre, setNombre] = useState('');
   const [apellido, setApellido] = useState('');
   const [dni, setDni] = useState('');
   const [telefono, setTelefono] = useState('');
-  const [modalidad, setModalidad] = useState<Modalidad>('Presencial');
+  const [modalidad, setModalidad] = useState<Modalidad | 'Presencial y Virtual'>('Presencial');
   const [diasAtencion, setDiasAtencion] = useState('');
   const [profesionalId, setProfesionalId] = useState('');
   const [motivoConsulta, setMotivoConsulta] = useState('');
@@ -90,7 +90,7 @@ export default function AdmisionModulo() {
           apellido: apellido.trim(),
           dni: dni.trim() || 'S/DNI',
           telefono: telefono.trim(),
-          modalidad,
+          modalidad: modalidad as any,
           diasAtencion: diasAtencion.trim() || 'A coordinar',
           profesionalId,
           profesionalNombre: profElegido ? profElegido.nombre : 'Sin asignar',
@@ -313,11 +313,12 @@ export default function AdmisionModulo() {
                 </label>
                 <select
                   value={modalidad}
-                  onChange={(e) => setModalidad(e.target.value as Modalidad)}
+                  onChange={(e) => setModalidad(e.target.value as any)}
                   className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-semibold text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] focus:bg-white cursor-pointer"
                 >
                   <option value="Presencial">Presencial (Sede CIAP)</option>
                   <option value="Virtual">Virtual (Online)</option>
+                  <option value="Presencial y Virtual">Presencial y Virtual (Híbrido)</option>
                 </select>
               </div>
 
@@ -461,7 +462,9 @@ export default function AdmisionModulo() {
                           <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
                             paciente.modalidad === 'Presencial' 
                               ? 'bg-[#EBF2EE] text-[#223D30] border border-[#C5D9CD]'
-                              : 'bg-[#F5EFEA] text-[#A8532F] border border-[#E9D7C9]'
+                              : paciente.modalidad === 'Virtual'
+                              ? 'bg-[#F5EFEA] text-[#A8532F] border border-[#E9D7C9]'
+                              : 'bg-[#FAF0E6] text-[#223D30] border border-[#E8D7C8]'
                           }`}>
                             {paciente.modalidad}
                           </span>

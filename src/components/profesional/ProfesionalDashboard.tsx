@@ -270,7 +270,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                 <button
                   type="button"
                   onClick={onVolverAdmin}
-                  className="sm:hidden flex items-center gap-1 px-2.5 py-1.5 bg-[#223D30] text-white rounded-xl text-xs font-bold"
+                  className="sm:hidden flex items-center gap-1 px-2.5 py-1.5 bg-[#223D30] text-white rounded-xl text-xs font-bold cursor-pointer"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
                   <span>Admin</span>
@@ -321,7 +321,6 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
             </nav>
 
             <div className="hidden sm:flex items-center gap-3 border-l border-[#E2DDD3] pl-4">
-              {/* Botón Volver a Administración */}
               {onVolverAdmin && (
                 <button
                   type="button"
@@ -395,11 +394,11 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
           )}
         </div>
 
-        {/* PESTAÑA 1: SESIONES Y AGENDA (2 COLUMNAS) */}
+        {/* PESTAÑA 1: SESIONES Y AGENDA */}
         {pestañaActiva === 'sesiones' && (
           <div className="space-y-5">
             
-            {/* CALENDARIO CON NAVEGACIÓN SEMANAL */}
+            {/* CARRUSEL DE NAVEGACIÓN SEMANAL (OPTIMIZADO PARA MÓVIL Y DESKTOP) */}
             <div className="bg-white border border-[#E8E3DA] rounded-3xl p-4 sm:p-5 shadow-xs space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -457,8 +456,8 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                 </div>
               </div>
 
-              {/* Botonera de los 6 días de la semana */}
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              {/* TIRA DE DÍAS CON SWIPE TÁCTIL SIN CORTES (SNAP HORIZONTAL) */}
+              <div className="flex items-center gap-2 sm:gap-2.5 overflow-x-auto pb-2 pt-1 -mx-1 px-1 sm:mx-0 snap-x snap-mandatory scroll-smooth no-scrollbar">
                 {diasSemanaCalculados.map((item) => {
                   const esSeleccionado = item.iso === fechaSeleccionadaAgenda;
                   return (
@@ -469,22 +468,22 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                         setFechaSeleccionadaAgenda(item.iso);
                         setFechaTurno(item.iso);
                       }}
-                      className={`p-3 rounded-2xl text-center border transition-all cursor-pointer ${
+                      className={`flex-shrink-0 w-[78px] sm:w-auto sm:flex-1 p-2.5 sm:p-3 rounded-2xl border text-center transition-all cursor-pointer snap-start select-none ${
                         esSeleccionado
-                          ? 'bg-[#223D30] text-white border-[#223D30] shadow-sm'
+                          ? 'bg-[#223D30] text-white border-[#223D30] shadow-md scale-[1.02]'
                           : 'bg-[#FAF8F5] text-[#1E2923] border-[#E8E3DA] hover:bg-[#F2EFE9]'
                       }`}
                     >
-                      <span className={`block text-[11px] font-bold uppercase ${esSeleccionado ? 'text-[#E3A382]' : 'text-[#6F7D74]'}`}>
+                      <span className={`block text-[10px] sm:text-[11px] font-bold uppercase ${esSeleccionado ? 'text-[#E3A382]' : 'text-[#6F7D74]'}`}>
                         {item.nombreDia}
                       </span>
-                      <span className="block text-lg font-bold font-mono my-0.5">
+                      <span className="block text-base sm:text-lg font-bold font-mono my-0.5">
                         {item.nroDia}
                       </span>
-                      <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      <span className={`inline-block text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.5 rounded-full truncate max-w-full ${
                         esSeleccionado 
                           ? 'bg-[#182C22] text-emerald-200' 
-                          : item.cantSesiones > 0 ? 'bg-[#EBF2EE] text-[#223D30]' : 'text-zinc-400'
+                          : item.cantSesiones > 0 ? 'bg-[#EBF2EE] text-[#223D30] font-bold' : 'text-zinc-400'
                       }`}>
                         {item.cantSesiones > 0 ? `${item.cantSesiones} turnos` : 'Sin turnos'}
                       </span>
@@ -542,9 +541,10 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase text-[#3C4A42] mb-1">
+                  {/* CAMPOS FECHA Y HORA CON SEPARACIÓN ERGONÓMICA EN MÓVIL */}
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                    <div className="min-w-0">
+                      <label className="block text-[10px] sm:text-[11px] font-bold uppercase text-[#3C4A42] mb-1">
                         Fecha
                       </label>
                       <input
@@ -552,12 +552,12 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                         required
                         value={fechaTurno}
                         onChange={(e) => setFechaTurno(e.target.value)}
-                        className="w-full px-2.5 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium"
+                        className="w-full min-w-0 px-3 py-2.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] focus:bg-white transition-all [appearance:none] [-webkit-appearance:none]"
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase text-[#3C4A42] mb-1">
+                    <div className="min-w-0">
+                      <label className="block text-[10px] sm:text-[11px] font-bold uppercase text-[#3C4A42] mb-1">
                         Hora
                       </label>
                       <input
@@ -565,7 +565,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                         required
                         value={horaTurno}
                         onChange={(e) => setHoraTurno(e.target.value)}
-                        className="w-full px-2.5 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium"
+                        className="w-full min-w-0 px-3 py-2.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] focus:bg-white transition-all [appearance:none] [-webkit-appearance:none]"
                       />
                     </div>
                   </div>
@@ -577,7 +577,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                     <select
                       value={estadoAsistencia}
                       onChange={(e) => setEstadoAsistencia(e.target.value as any)}
-                      className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-bold text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] cursor-pointer"
+                      className="w-full px-3 py-2.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-bold text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] cursor-pointer"
                     >
                       <option value="Atendida">🟢 Atendida (Sesión realizada)</option>
                       <option value="No se conectó">🔴 No se conectó / Ausente</option>
@@ -681,7 +681,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
           </div>
         )}
 
-        {/* PESTAÑA 2: PACIENTES ASIGNADOS (SIN TELÉFONO - PRIVACIDAD TOTAL) */}
+        {/* PESTAÑA 2: PACIENTES ASIGNADOS */}
         {pestañaActiva === 'pacientes' && (
           <div className="bg-white border border-[#E8E3DA] rounded-3xl p-5 sm:p-7 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#F0EBE3]">
@@ -793,7 +793,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                 <div>
                   <h3 className="text-base font-bold text-[#1E2923]">Historial de Liquidaciones de Honorarios</h3>
                   <p className="text-xs text-[#6F7D74]">
-                    Comprobantes y transferencias enviadas por Administración de Centro CIAP los viernes (60% honorarios).
+                    Comprobantes y transferencias enviadas por Administración de Centro CIAP los viernes (60% honorarios)[cite: 1, 2].
                   </p>
                 </div>
 
@@ -855,7 +855,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                 <div>
                   <h3 className="text-base font-bold text-[#1E2923]">Sesiones Registradas y Estado de Liquidación</h3>
                   <p className="text-xs text-[#6F7D74]">
-                    Seguimiento detallado de turnos realizados y su cómputo para la liquidación semanal del 60%.
+                    Seguimiento detallado de turnos realizados y su cómputo para la liquidación semanal del 60%[cite: 1, 2].
                   </p>
                 </div>
 
