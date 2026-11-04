@@ -36,7 +36,8 @@ import {
   CalendarDays,
   Clock,
   UserCheck,
-  Sparkles
+  Sparkles,
+  CreditCard
 } from 'lucide-react';
 
 interface TurnoPrivado {
@@ -103,12 +104,13 @@ export default function DireccionPrivadaModulo() {
   const [cargandoTurnos, setCargandoTurnos] = useState(false);
   const [turnoExito, setTurnoExito] = useState(false);
 
-  // Formulario Nuevo Turno Privado
+  // Formulario Nuevo Turno Privado (con Medio / Cuenta de Cobro)
   const [pacienteTurnoNombre, setPacienteTurnoNombre] = useState('');
   const [fechaTurnoPrivado, setFechaTurnoPrivado] = useState(() => new Date().toISOString().slice(0, 10));
   const [horaTurnoPrivado, setHoraTurnoPrivado] = useState('17:00');
   const [modalidadTurnoPrivado, setModalidadTurnoPrivado] = useState<'Presencial' | 'Virtual'>('Presencial');
   const [arancelTurnoPrivado, setArancelTurnoPrivado] = useState('20000');
+  const [cuentaTurnoPrivado, setCuentaTurnoPrivado] = useState('Mercado Pago');
 
   // Formulario de Finanzas (Movimiento manual)
   const [tipo, setTipo] = useState<'Ingreso' | 'Egreso'>('Egreso');
@@ -176,10 +178,9 @@ export default function DireccionPrivadaModulo() {
         modalidad: d.data().modalidad,
         arancel: d.data().arancel || 0,
         estado: d.data().estado || 'Pendiente',
-        cuentaDestino: d.data().cuentaDestino,
+        cuentaDestino: d.data().cuentaDestino || 'Mercado Pago',
         creadoEn: d.data().creadoEn
       }));
-      // Ordenar por fecha y hora descendente
       lista.sort((a, b) => `${b.fecha} ${b.hora}`.localeCompare(`${a.fecha} ${a.hora}`));
       setTurnosPrivados(lista);
     } catch (e) {
@@ -196,7 +197,6 @@ export default function DireccionPrivadaModulo() {
     }
   }, [desbloqueado]);
 
-  // Guardar categorías personalizadas en localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('ciap_cat_egreso_dir', JSON.stringify(categoriasEgreso));
@@ -301,7 +301,7 @@ export default function DireccionPrivadaModulo() {
     }, 1500);
   };
 
-  // Guardar Turno Privado de Sandra
+  // Guardar Turno Privado de Sandra vinculando el Medio de Cobro
   const handleCrearTurnoPrivado = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pacienteTurnoNombre.trim()) return;
@@ -316,6 +316,7 @@ export default function DireccionPrivadaModulo() {
         modalidad: modalidadTurnoPrivado,
         arancel: monto,
         estado: 'Pendiente',
+        cuentaDestino: cuentaTurnoPrivado,
         creadoEn: serverTimestamp()
       });
 
@@ -331,23 +332,24 @@ export default function DireccionPrivadaModulo() {
     }
   };
 
-  // Asentar Cobro de Turno Privado (Pasa a Cobrado y crea el Ingreso en Finanzas)
+  // Asentar Cobro de Turno Privado (usa el medio de cobro elegido por Sandra)
   const handleAsentarCobroTurno = async (turno: TurnoPrivado) => {
+    const cuentaFinal = turno.cuentaDestino || 'Mercado Pago';
     try {
       // 1. Actualizar estado del turno a Cobrado
       await updateDoc(doc(db, 'turnos_privados_direccion', turno.id), {
         estado: 'Cobrado',
-        cuentaDestino: 'Mercado Pago'
+        cuentaDestino: cuentaFinal
       });
 
-      // 2. Registrar automáticamente el ingreso en el libro contable de Sandra
+      // 2. Registrar automáticamente el ingreso en el libro contable de Sandra con la cuenta correcta
       await guardarMovimientoDireccion({
         tipo: 'Ingreso',
         subtipo: 'Paciente Propio',
         detalle: `${turno.pacienteNombre} (Sesión particular ${turno.modalidad})`,
         importe: turno.arancel,
         fecha: turno.fecha,
-        cuenta: 'Mercado Pago'
+        cuenta: cuentaFinal
       });
 
       await Promise.all([cargarTurnosPrivados(), cargarDatosFinanzas()]);
@@ -775,6 +777,24 @@ export default function DireccionPrivadaModulo() {
                 </div>
               </div>
 
+              {/* CAMPO: MEDIO / CUENTA DE COBRO PARA PACIENTE PROPIO */}
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
+                  Medio / Cuenta de Cobro
+                </label>
+                <select
+                  value={cuentaTurnoPrivado}
+                  onChange={(e) => setCuentaTurnoPrivado(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-semibold text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] cursor-pointer"
+                >
+                  <option value="Mercado Pago">Mercado Pago</option>
+                  <option value="Santander">Santander</option>
+                  <option value="Banco Ciudad">Banco Ciudad</option>
+                  <option value="Efectivo en Mano">Efectivo en Mano</option>
+                  <option value="Tarjeta de Crédito">Tarjeta de Crédito</option>
+                </select>
+              </div>
+
               <button
                 type="submit"
                 disabled={cargandoTurnos}
@@ -834,11 +854,15 @@ export default function DireccionPrivadaModulo() {
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-2 mt-1 text-xs text-[#6F7D74] font-mono">
+                          <div className="flex items-center gap-2 mt-1 text-xs text-[#6F7D74] font-mono flex-wrap">
                             <Calendar className="w-3.5 h-3.5 text-[#A8532F]" />
                             <span>{turno.fecha} a las {turno.hora} hs</span>
                             <span>•</span>
                             <strong className="text-[#1E2923] font-sans">$ {turno.arancel.toLocaleString('es-AR')}</strong>
+                            <span>•</span>
+                            <span className="text-[#223D30] font-sans font-bold bg-[#EFECE6] px-2 py-0.5 rounded-md">
+                              {turno.cuentaDestino || 'Mercado Pago'}
+                            </span>
                           </div>
                         </div>
 
@@ -1143,7 +1167,7 @@ export default function DireccionPrivadaModulo() {
                             <Calendar className="w-3.5 h-3.5 text-[#A8532F]" />
                             <span>{mov.fecha}</span>
                             <span>•</span>
-                            <span>{mov.cuenta || 'Sin especificar'}</span>
+                            <span className="font-semibold text-[#223D30]">{mov.cuenta || 'Sin especificar'}</span>
                           </div>
                         </div>
 
@@ -1292,7 +1316,7 @@ export default function DireccionPrivadaModulo() {
               </div>
               <button
                 onClick={() => setModalNuevaCat(false)}
-                className="text-zinc-400 hover:text-zinc-700"
+                className="text-zinc-400 hover:text-zinc-700 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1318,7 +1342,7 @@ export default function DireccionPrivadaModulo() {
                 <button
                   type="button"
                   onClick={() => setModalNuevaCat(false)}
-                  className="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800"
+                  className="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 cursor-pointer"
                 >
                   Cancelar
                 </button>
