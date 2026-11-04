@@ -36,10 +36,11 @@ import {
   Sparkles,
   Phone,
   Hourglass,
-  Layers
+  Layers,
+  UserCheck
 } from 'lucide-react';
 
-// Estructura local para seguimiento de Evaluaciones y Psicodiagnósticos (1 mes / 50% y 50%)
+// Estructura para seguimiento de Evaluaciones y Psicodiagnósticos (1 mes / 50% y 50%)
 interface EvaluacionClinica {
   id: string;
   pacienteNombre: string;
@@ -79,9 +80,9 @@ export default function TalleresEvaluacionesModulo() {
   const [apellidoTaller, setApellidoTaller] = useState('');
   const [edadTaller, setEdadTaller] = useState('');
   const [telefonoTaller, setTelefonoTaller] = useState('');
+  const [profesionalTallerId, setProfesionalTallerId] = useState('');
   const [fechaViernes, setFechaViernes] = useState(() => {
     const d = new Date();
-    // Próximo viernes por defecto
     const dia = d.getDay();
     const diff = (5 - dia + 7) % 7;
     d.setDate(d.getDate() + (diff === 0 ? 7 : diff));
@@ -109,7 +110,6 @@ export default function TalleresEvaluacionesModulo() {
         try { return JSON.parse(guardado); } catch (e) { }
       }
     }
-    // Casos testigo iniciales
     return [
       {
         id: 'eval-1',
@@ -168,8 +168,9 @@ export default function TalleresEvaluacionesModulo() {
       setProfesionales(dataProfesionales);
       setPacientes(dataPacientes);
 
-      if (dataProfesionales.length > 0 && !profesionalEvalId) {
-        setProfesionalEvalId(dataProfesionales[0].id);
+      if (dataProfesionales.length > 0) {
+        if (!profesionalTallerId) setProfesionalTallerId(dataProfesionales[0].id);
+        if (!profesionalEvalId) setProfesionalEvalId(dataProfesionales[0].id);
       }
     } catch (e) {
       console.error('Error cargando talleres y evaluaciones:', e);
@@ -186,14 +187,18 @@ export default function TalleresEvaluacionesModulo() {
     }
   }, [evaluaciones]);
 
-  // Guardar concurrente a Taller de la Memoria
+  // Guardar concurrente a Taller de la Memoria y vincularlo al profesional para su 60%
   const handleSubmitTaller = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nombreTaller.trim() || !apellidoTaller.trim()) return;
 
     setGuardandoTaller(true);
     try {
+      const profElegido = profesionales.find(p => p.id === profesionalTallerId);
+      const profIdFinal = profElegido?.id || 'sede-ciap';
+      const profNombreFinal = profElegido?.nombre || 'Sede CIAP (Talleres)';
       const monto = Number(importeTaller) || 15000;
+
       await guardarTallerMemoria({
         nombreCompleto: `${nombreTaller.trim()} ${apellidoTaller.trim()}`,
         edad: Number(edadTaller) || 0,
@@ -205,16 +210,18 @@ export default function TalleresEvaluacionesModulo() {
         cuentaDestino: abonaEnElDia ? cuentaTaller : undefined,
         metodoPago: abonaEnElDia ? metodoTaller : undefined,
         numeroComprobante: abonaEnElDia ? (comprobanteTaller.trim() || 'Abonó en taller') : undefined,
-        fechaCobro: abonaEnElDia ? new Date().toLocaleDateString('es-AR') : undefined
-      });
+        fechaCobro: abonaEnElDia ? new Date().toLocaleDateString('es-AR') : undefined,
+        profesionalId: profIdFinal,
+        profesionalNombre: profNombreFinal
+      } as any);
 
-      // Si se cobró, impacta también en Caja central como sesión de taller
+      // Si se cobró, impacta directamente en Caja bajo el nombre del profesional para liquidar el 60%
       if (abonaEnElDia) {
         await guardarSesion({
           pacienteId: 'taller-memoria',
           pacienteNombre: `${nombreTaller.trim()} ${apellidoTaller.trim()} (Taller Memoria)`,
-          profesionalId: 'sede-ciap',
-          profesionalNombre: 'Sede CIAP (Talleres)',
+          profesionalId: profIdFinal,
+          profesionalNombre: profNombreFinal,
           fecha: fechaViernes,
           hora: '17:00',
           modalidad: 'Presencial',
@@ -246,8 +253,30 @@ export default function TalleresEvaluacionesModulo() {
   };
 
   const handleConfirmarCobroTaller = async (id: string) => {
+    const t = talleres.find(item => item.id === id);
     try {
       await cobrarTallerMemoria(id, cuentaCobroTaller, 'Efectivo', comprobanteCobroTaller);
+      
+      // Impactar en Caja si se cobra diferido
+      if (t) {
+        await guardarSesion({
+          pacienteId: 'taller-memoria',
+          pacienteNombre: `${t.nombreCompleto} (Taller Memoria)`,
+          profesionalId: (t as any).profesionalId || profesionalTallerId || 'sede-ciap',
+          profesionalNombre: (t as any).profesionalNombre || 'Lic. Coordinador',
+          fecha: t.fechaViernes,
+          hora: '17:00',
+          modalidad: 'Presencial',
+          importe: t.importe,
+          estadoPago: 'Cobrado',
+          tipoServicio: 'TallerMemoria',
+          cuentaDestino: cuentaCobroTaller,
+          metodoPago: 'Efectivo',
+          numeroComprobante: comprobanteCobroTaller.trim() || 'Cobro Taller en el Día',
+          fechaCobro: new Date().toLocaleDateString('es-AR')
+        });
+      }
+
       setCobrandoTallerId(null);
       setComprobanteCobroTaller('');
       await cargarDatos();
@@ -268,7 +297,6 @@ export default function TalleresEvaluacionesModulo() {
       const montoTotal = Number(importeTotalEval) || 70000;
       const mitad = Math.round(montoTotal / 2);
 
-      // Fecha estimada de entrega: 1 mes después
       const fechaIni = new Date(fechaInicioEval);
       const fechaFin = new Date(fechaIni);
       fechaFin.setMonth(fechaFin.getMonth() + 1);
@@ -301,7 +329,6 @@ export default function TalleresEvaluacionesModulo() {
 
       setEvaluaciones(prev => [nuevaEvaluacion, ...prev]);
 
-      // Si la Cuota 1 fue cobrada, impacta en Caja
       if (cuota1Cobrada) {
         await guardarSesion({
           pacienteId: `eval-${Date.now()}`,
@@ -314,7 +341,6 @@ export default function TalleresEvaluacionesModulo() {
           importe: mitad,
           estadoPago: 'Cobrado',
           tipoServicio: 'Psicodiagnostico',
-          etapaCobro: '50% Inicial',
           cuentaDestino: cuentaCuota1,
           metodoPago: 'Transferencia',
           numeroComprobante: comprobanteCuota1.trim() || 'Cuota 1 (50% Inicial)',
@@ -336,13 +362,11 @@ export default function TalleresEvaluacionesModulo() {
     }
   };
 
-  // Cobrar Cuota 2 (50% Final al entregar informe)
   const handleConfirmarCuota2 = async (evalId: string) => {
     const target = evaluaciones.find(ev => ev.id === evalId);
     if (!target) return;
 
     try {
-      // Impacta en Caja como la segunda mitad cobrada
       await guardarSesion({
         pacienteId: target.id,
         pacienteNombre: `${target.pacienteNombre} (${target.tipoEvaluacion} - 50% Final)`,
@@ -354,7 +378,6 @@ export default function TalleresEvaluacionesModulo() {
         importe: target.cuota2.monto,
         estadoPago: 'Cobrado',
         tipoServicio: 'Psicodiagnostico',
-        etapaCobro: '50% Final',
         cuentaDestino: cuentaCuota2,
         metodoPago: 'Transferencia',
         numeroComprobante: comprobanteCuota2.trim() || 'Cuota 2 (50% Final / Entrega)',
@@ -387,11 +410,15 @@ export default function TalleresEvaluacionesModulo() {
   };
 
   const talleresFiltrados = talleres.filter(t =>
-    `${t.nombreCompleto} ${t.telefono} ${t.fechaViernes}`.toLowerCase().includes(busquedaTaller.toLowerCase())
+    `${t.nombreCompleto} ${t.telefono} ${t.fechaViernes} ${(t as any).profesionalNombre || ''}`
+      .toLowerCase()
+      .includes(busquedaTaller.toLowerCase())
   );
 
   const evaluacionesFiltradas = evaluaciones.filter(ev =>
-    `${ev.pacienteNombre} ${ev.dni} ${ev.profesionalNombre} ${ev.tipoEvaluacion}`.toLowerCase().includes(busquedaEval.toLowerCase())
+    `${ev.pacienteNombre} ${ev.dni} ${ev.profesionalNombre} ${ev.tipoEvaluacion}`
+      .toLowerCase()
+      .includes(busquedaEval.toLowerCase())
   );
 
   return (
@@ -414,11 +441,10 @@ export default function TalleresEvaluacionesModulo() {
               Talleres Grupales & Psicodiagnósticos
             </h2>
             <p className="text-xs sm:text-sm text-[#C8D6CF] mt-1 max-w-2xl">
-              Control de estimulación cognitiva de los viernes (1:30 hs) y seguimiento escalonado en 2 cuotas (50% inicio / 50% final) para baterías de test.
+              Control de estimulación cognitiva de los viernes (1:30 hs) y seguimiento escalonado en 2 cuotas (50% inicio / 50% final) para baterías de test con liquidación unificada.
             </p>
           </div>
 
-          {/* CONMUTADOR DE SUB-MÓDULO */}
           <div className="flex items-center bg-[#1A2E24] p-1 rounded-2xl border border-[#2D4D3D] self-start lg:self-auto">
             <button
               type="button"
@@ -449,7 +475,7 @@ export default function TalleresEvaluacionesModulo() {
         </div>
       </div>
 
-      {/* --- SECCIÓN 1: TALLERES DE LA MEMORIA (Viernes, 1:30 hs, cobro en el día) --- */}
+      {/* --- SECCIÓN 1: TALLERES DE LA MEMORIA --- */}
       {subPestaña === 'talleres' && (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
           
@@ -468,7 +494,7 @@ export default function TalleresEvaluacionesModulo() {
             {exitoTaller && (
               <div className="mb-4 p-3 bg-[#EAF5EF] border border-[#BCE1CC] text-[#1E5C38] rounded-2xl text-xs font-semibold flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 shrink-0 text-[#2E8B57]" />
-                <span>¡Concurrente anotado y cobro registrado en Caja!</span>
+                <span>¡Concurrente anotado y asignado a honorarios del profesional!</span>
               </div>
             )}
 
@@ -521,6 +547,27 @@ export default function TalleresEvaluacionesModulo() {
                     className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#223D30]"
                   />
                 </div>
+              </div>
+
+              {/* PROFESIONAL COORDINADOR QUE COBRA EL 60% */}
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
+                  Profesional Coordinador / Dicta el Taller
+                </label>
+                <select
+                  value={profesionalTallerId}
+                  onChange={(e) => setProfesionalTallerId(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-bold text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] cursor-pointer"
+                >
+                  {profesionales.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nombre} ({p.especialidad})
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[10px] text-[#A8532F] font-bold mt-1 block">
+                  El ingreso computará en su liquidación del viernes (60% honorarios).
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -640,6 +687,7 @@ export default function TalleresEvaluacionesModulo() {
                 talleresFiltrados.map((t) => {
                   const esCobrado = t.estadoPago === 'Cobrado';
                   const estaCobrando = cobrandoTallerId === t.id;
+                  const nombreProf = (t as any).profesionalNombre || 'Sede CIAP (Talleres)';
 
                   return (
                     <div 
@@ -655,7 +703,7 @@ export default function TalleresEvaluacionesModulo() {
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-2 mt-1 text-xs text-[#6F7D74] font-mono">
+                          <div className="flex items-center gap-2 mt-1 text-xs text-[#6F7D74] font-mono flex-wrap">
                             <span className="flex items-center gap-1 text-[#223D30]">
                               <Calendar className="w-3.5 h-3.5 text-[#A8532F]" />
                               Viernes {t.fechaViernes}
@@ -666,7 +714,7 @@ export default function TalleresEvaluacionesModulo() {
                               {t.duracion}
                             </span>
                             <span>•</span>
-                            <span>Tel: {t.telefono}</span>
+                            <span>Coord: <strong className="text-[#1E2923] font-sans">{nombreProf}</strong></span>
                           </div>
                         </div>
 
@@ -684,9 +732,9 @@ export default function TalleresEvaluacionesModulo() {
                         </div>
                       </div>
 
-                      <div className="pt-2 border-t border-[#F0EBE3] flex items-center justify-between text-xs text-[#5C6B61]">
+                      <div className="pt-2 border-t border-[#F0EBE3] flex items-center justify-between text-xs text-[#5C6B61] flex-wrap gap-2">
                         {esCobrado ? (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span>Ingresó en: <strong className="text-[#1E2923] font-semibold">{t.cuentaDestino}</strong></span>
                             <span>•</span>
                             <span>Comp: <strong className="font-mono text-[#1E2923]">{t.numeroComprobante || 'Abonó en día'}</strong></span>
@@ -751,7 +799,7 @@ export default function TalleresEvaluacionesModulo() {
         </div>
       )}
 
-      {/* --- SECCIÓN 2: PSICODIAGNÓSTICOS Y EVALUACIONES (1 Mes / 50% y 50%) --- */}
+      {/* --- SECCIÓN 2: PSICODIAGNÓSTICOS Y EVALUACIONES (50% y 50%) --- */}
       {subPestaña === 'evaluaciones' && (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
           
@@ -770,7 +818,7 @@ export default function TalleresEvaluacionesModulo() {
             {exitoEval && (
               <div className="mb-4 p-3 bg-[#EAF5EF] border border-[#BCE1CC] text-[#1E5C38] rounded-2xl text-xs font-semibold flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 shrink-0 text-[#2E8B57]" />
-                <span>¡Evaluación iniciada! 50% Inicial registrado.</span>
+                <span>¡Evaluación iniciada! 50% Inicial registrado y computado para liquidar.</span>
               </div>
             )}
 
