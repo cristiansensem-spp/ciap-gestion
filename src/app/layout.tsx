@@ -8,6 +8,15 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "Centro Ciap | Sistema de Gestión",
   description: "Plataforma integral de gestión de admisiones, pacientes y finanzas",
+  icons: {
+    icon: "/icon.png",
+    apple: "/icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Centro CIAP",
+    statusBarStyle: "default",
+  },
 };
 
 export default function RootLayout({

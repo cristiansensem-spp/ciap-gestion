@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
@@ -17,9 +17,46 @@ import { Loader2 } from 'lucide-react';
 
 export default function Home() {
   const { user, loading } = useAuth();
-  const [seccionActiva, setSeccionActiva] = useState('admision');
+  const [seccionActiva, setSeccionActivaState] = useState('admision');
   const [rolUsuario, setRolUsuario] = useState<'admin' | 'profesional' | null>(null);
   const [verificandoRol, setVerificandoRol] = useState(true);
+
+  // Sincronización de solapas con el historial del navegador (Atrás / Adelante / F5)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const seccionEnUrl = params.get('seccion');
+
+    if (seccionEnUrl) {
+      setSeccionActivaState(seccionEnUrl);
+    } else {
+      const url = new URL(window.location.href);
+      url.searchParams.set('seccion', 'admision');
+      window.history.replaceState({ seccion: 'admision' }, '', url.toString());
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      const p = new URLSearchParams(window.location.search);
+      const seccion = p.get('seccion') || event.state?.seccion || 'admision';
+      setSeccionActivaState(seccion);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Función para cambiar de solapa guardando paso en el historial
+  const setSeccionActiva = useCallback((nuevaSeccion: string) => {
+    setSeccionActivaState(nuevaSeccion);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('seccion') !== nuevaSeccion) {
+        url.searchParams.set('seccion', nuevaSeccion);
+        window.history.pushState({ seccion: nuevaSeccion }, '', url.toString());
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const determinarRol = async () => {
@@ -46,7 +83,7 @@ export default function Home() {
       }
 
       try {
-        // 2. Consulta en la colección 'recepcionistas' (para Carolina y cualquier recepcionista creado en la tuerca)
+        // 2. Consulta en la colección 'recepcionistas' (para Carolina y personal administrativo)
         const qRecep = query(
           collection(db, 'recepcionistas'), 
           where('email', '==', emailNormalizado)
