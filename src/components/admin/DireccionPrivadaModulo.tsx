@@ -777,7 +777,7 @@ export default function DireccionPrivadaModulo() {
                 </div>
               </div>
 
-              {/* CAMPO: MEDIO / CUENTA DE COBRO PARA PACIENTE PROPIO */}
+              {/* SELECTOR MEDIO / CUENTA DE COBRO */}
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
                   Medio / Cuenta de Cobro
@@ -790,8 +790,9 @@ export default function DireccionPrivadaModulo() {
                   <option value="Mercado Pago">Mercado Pago</option>
                   <option value="Santander">Santander</option>
                   <option value="Banco Ciudad">Banco Ciudad</option>
+                  <option value="Banco Provincia">Banco Provincia</option>
+                  <option value="Banco Galicia">Banco Galicia</option>
                   <option value="Efectivo en Mano">Efectivo en Mano</option>
-                  <option value="Tarjeta de Crédito">Tarjeta de Crédito</option>
                 </select>
               </div>
 
@@ -1035,6 +1036,7 @@ export default function DireccionPrivadaModulo() {
                 </div>
               </div>
 
+              {/* MEDIO / CUENTA DE MANEJO EN FINANZAS */}
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
                   Medio / Cuenta de Manejo
@@ -1047,8 +1049,9 @@ export default function DireccionPrivadaModulo() {
                   <option value="Mercado Pago">Mercado Pago</option>
                   <option value="Santander">Santander</option>
                   <option value="Banco Ciudad">Banco Ciudad</option>
+                  <option value="Banco Provincia">Banco Provincia</option>
+                  <option value="Banco Galicia">Banco Galicia</option>
                   <option value="Efectivo en Mano">Efectivo en Mano</option>
-                  <option value="Tarjeta de Crédito">Tarjeta de Crédito</option>
                 </select>
               </div>
 
@@ -1342,7 +1345,7 @@ export default function DireccionPrivadaModulo() {
                 <button
                   type="button"
                   onClick={() => setModalNuevaCat(false)}
-                  className="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 cursor-pointer"
+                  className="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800"
                 >
                   Cancelar
                 </button>
