@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { resetearDatosPrueba } from '../../lib/servicios';
 import { db } from '../../lib/firebase';
@@ -21,7 +21,8 @@ import {
   Lock,
   CalendarCheck,
   UserPlus,
-  KeyRound
+  KeyRound,
+  ChevronRight
 } from 'lucide-react';
 
 interface Props {
@@ -37,9 +38,21 @@ interface Recepcionista {
 }
 
 export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) {
-  const { user, logout } = useAuth();
+  const { user, logout, login } = useAuth();
+  
+  // Modales
   const [modalConfigAbierto, setModalConfigAbierto] = useState(false);
   const [pestañaConfig, setPestañaConfig] = useState<'operadores' | 'reset'>('operadores');
+  
+  // Modal de cambio rápido de operador / login express
+  const [modalCambioTurno, setModalCambioTurno] = useState(false);
+  const [operadorSeleccionado, setOperadorSeleccionado] = useState<{ nombre: string; email: string } | null>(null);
+  const [claveTurnoInput, setClaveTurnoInput] = useState('');
+  const [verificandoClave, setVerificandoClave] = useState(false);
+  const [errorClaveTurno, setErrorClaveTurno] = useState('');
+
+  // Notificación de cambio de turno
+  const [avisoTurnoExito, setAvisoTurnoExito] = useState<string | null>(null);
 
   // Control de reseteo
   const [reseteando, setReseteando] = useState(false);
@@ -55,7 +68,7 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
   const [opExito, setOpExito] = useState(false);
   const [claveRestablecidaAviso, setClaveRestablecidaAviso] = useState<string | null>(null);
 
-  // Módulos operativos
+  // Módulos operativos básicos
   const navItems = [
     { id: 'admision', label: 'Admisión', icon: Users },
     { id: 'caja', label: 'Caja y Cobranzas', icon: CreditCard },
@@ -65,11 +78,18 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
   ];
 
   const emailLimpio = user?.email?.toLowerCase().trim() || '';
-  const esCuentaDireccion = 
+  const cuentaEsAdminMaster = 
     emailLimpio === 'admin@centrociap.com.ar' || 
     emailLimpio === 'sandell661@gmail.com' ||
     emailLimpio.includes('sandra') || 
     emailLimpio.includes('direccion');
+
+  // Si no es Sandra y está en Dirección o Mi Consultorio, redirigir a Admisión
+  useEffect(() => {
+    if (!cuentaEsAdminMaster && (seccionActiva === 'direccion' || seccionActiva === 'consultorio')) {
+      setSeccionActiva('admision');
+    }
+  }, [cuentaEsAdminMaster, seccionActiva, setSeccionActiva]);
 
   const cargarRecepcionistas = async () => {
     try {
@@ -87,11 +107,50 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
   };
 
   useEffect(() => {
+    cargarRecepcionistas();
+  }, []);
+
+  useEffect(() => {
     if (modalConfigAbierto) {
       cargarRecepcionistas();
       setClaveRestablecidaAviso(null);
     }
   }, [modalConfigAbierto]);
+
+  // Nombre visible del operador actual
+  const nombreOperadorActual = useMemo(() => {
+    if (cuentaEsAdminMaster) return 'Lic. Sandra';
+    const encontrado = recepcionistas.find(r => r.email.toLowerCase() === emailLimpio);
+    if (encontrado) return encontrado.nombre;
+    if (user?.nombre) return user.nombre;
+    return 'Recepción CIAP';
+  }, [cuentaEsAdminMaster, recepcionistas, emailLimpio, user]);
+
+  // Ejecutar cambio de usuario mediante el método login nativo de useAuth
+  const handleConfirmarCambioTurno = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!operadorSeleccionado || !claveTurnoInput.trim()) return;
+
+    setErrorClaveTurno('');
+    setVerificandoClave(true);
+
+    try {
+      await login(operadorSeleccionado.email, claveTurnoInput.trim());
+      
+      const nombreCambiado = operadorSeleccionado.nombre;
+      setModalCambioTurno(false);
+      setOperadorSeleccionado(null);
+      setClaveTurnoInput('');
+      
+      setAvisoTurnoExito(`Sesión validada: Turno activo de ${nombreCambiado}`);
+      setTimeout(() => setAvisoTurnoExito(null), 3500);
+    } catch (err: any) {
+      console.error('Error al cambiar de turno:', err);
+      setErrorClaveTurno('Contraseña incorrecta o usuario no válido.');
+    } finally {
+      setVerificandoClave(false);
+    }
+  };
 
   const handleCrearRecepcionista = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,27 +224,27 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
   return (
     <>
       <header className="sticky top-0 z-30 w-full bg-[#FBF9F5]/95 backdrop-blur-md border-b border-[#E8E3DA] shadow-xs">
-        <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 gap-3">
+        <div className="w-full max-w-[1600px] mx-auto px-3 sm:px-5 lg:px-6">
+          <div className="flex items-center justify-between h-16 gap-2">
             
             {/* 1. LOGO CIAP */}
             <div 
-              className="flex items-center gap-2.5 shrink-0 cursor-pointer group"
+              className="flex items-center gap-2 shrink-0 cursor-pointer group"
               onClick={() => setSeccionActiva('admision')}
             >
-              <div className="w-9 h-9 bg-[#A8532F] text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-2xs group-hover:bg-[#914524] transition-colors select-none">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 bg-[#A8532F] text-white rounded-xl flex items-center justify-center font-bold text-base sm:text-lg shadow-2xs group-hover:bg-[#914524] transition-colors select-none">
                 Ψ
               </div>
-              <div className="leading-tight">
-                <span className="text-base font-bold text-[#1E2923] tracking-tight block">CIAP</span>
-                <span className="text-[10px] font-bold tracking-widest text-[#A8532F] uppercase block">
+              <div className="leading-tight hidden sm:block">
+                <span className="text-sm sm:text-base font-bold text-[#1E2923] tracking-tight block">CIAP</span>
+                <span className="text-[9px] font-bold tracking-widest text-[#A8532F] uppercase block">
                   Administración
                 </span>
               </div>
             </div>
 
             {/* 2. MENÚ OPERATIVO CENTRAL */}
-            <nav className="hidden lg:flex items-center gap-1.5 bg-[#EFECE6] p-1 rounded-2xl border border-[#E2DDD3]">
+            <nav className="hidden lg:flex items-center gap-1 bg-[#EFECE6] p-1 rounded-2xl border border-[#E2DDD3]">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const activo = seccionActiva === item.id;
@@ -193,7 +252,7 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
                   <button
                     key={item.id}
                     onClick={() => setSeccionActiva(item.id)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all duration-150 cursor-pointer whitespace-nowrap ${
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-all duration-150 cursor-pointer whitespace-nowrap ${
                       activo
                         ? 'bg-[#223D30] text-white shadow-xs'
                         : 'text-[#4A554E] hover:text-[#1E2923] hover:bg-white/50'
@@ -205,22 +264,26 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
                 );
               })}
 
-              {/* Botones Reservados para Dirección / Sandra */}
-              {esCuentaDireccion && (
+              {/* Botones Reservados para Dirección: Solo si la sesión es de Sandra */}
+              {cuentaEsAdminMaster && (
                 <div className="flex items-center gap-1 pl-1 border-l border-[#DDD6CC]">
                   <button
                     type="button"
                     onClick={() => setSeccionActiva('consultorio')}
                     title="Ver mi agenda y pacientes como psicóloga"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[#223D30] hover:bg-white/70 transition-all cursor-pointer whitespace-nowrap"
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      seccionActiva === 'consultorio'
+                        ? 'bg-[#223D30] text-white shadow-xs'
+                        : 'text-[#223D30] hover:bg-white/70'
+                    }`}
                   >
-                    <CalendarCheck className="w-3.5 h-3.5 text-[#223D30]" />
+                    <CalendarCheck className="w-3.5 h-3.5" />
                     <span>Mi Consultorio</span>
                   </button>
 
                   <button
                     onClick={() => setSeccionActiva('direccion')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all duration-150 cursor-pointer whitespace-nowrap ${
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all duration-150 cursor-pointer whitespace-nowrap ${
                       seccionActiva === 'direccion'
                         ? 'bg-[#1A2E24] text-white shadow-xs border border-[#3C614E]'
                         : 'text-[#A8532F] hover:bg-[#FAF8F5]'
@@ -233,19 +296,37 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
               )}
             </nav>
 
-            {/* 3. PERFIL & HERRAMIENTAS */}
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0 border-l border-[#E2DDD3] pl-3 sm:pl-4">
-              <div className="text-right hidden sm:block leading-tight">
-                <span className="text-xs font-semibold text-[#1E2923] block truncate max-w-[170px]">
-                  {emailLimpio === 'sandell661@gmail.com' ? 'Lic. Sandra' : user?.email}
-                </span>
-                <span className="text-[10px] text-[#6F7D74] block">
-                  {esCuentaDireccion ? 'Dirección General' : 'Recepción Activa'}
-                </span>
-              </div>
+            {/* 3. BOTÓN PROTEGIDO DE CAMBIO DE TURNO + ACCIONES */}
+            <div className="flex items-center gap-2 shrink-0">
+              
+              {/* CÁPSULA INTERACTIVA CON CLAVE: CAMBIO DE TURNO */}
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorClaveTurno('');
+                  setClaveTurnoInput('');
+                  setOperadorSeleccionado(null);
+                  setModalCambioTurno(true);
+                }}
+                title="Cambiar de operador / Cambiar turno"
+                className="flex items-center gap-2 bg-[#FAF8F5] border border-[#DDD6CC] hover:border-[#223D30] hover:bg-white rounded-xl px-2.5 py-1 shadow-2xs transition-all cursor-pointer"
+              >
+                <div className={`w-2 h-2 rounded-full shrink-0 ${
+                  cuentaEsAdminMaster ? 'bg-[#A8532F]' : 'bg-emerald-500 animate-pulse'
+                }`} />
+                <div className="text-left leading-tight">
+                  <span className="block text-[9px] uppercase tracking-wider font-bold text-[#6F7D74]">
+                    {cuentaEsAdminMaster ? 'Dirección' : 'Mostrador'}
+                  </span>
+                  <span className="text-xs font-bold text-[#1E2923] block max-w-[110px] sm:max-w-[130px] truncate">
+                    {nombreOperadorActual}
+                  </span>
+                </div>
+                <KeyRound className="w-3.5 h-3.5 text-[#8C9B91]" />
+              </button>
 
-              {/* Botón Configuración */}
-              {esCuentaDireccion && (
+              {/* Tuerca de Configuración: Solo si la cuenta es Sandra / Master */}
+              {cuentaEsAdminMaster && (
                 <button
                   type="button"
                   onClick={() => {
@@ -261,20 +342,20 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
                 </button>
               )}
 
-              {/* Salir */}
+              {/* Botón Salir */}
               <button
                 onClick={() => logout()}
-                title="Cerrar sesión"
+                title="Cerrar sesión completa"
                 className="flex items-center gap-1.5 px-3 py-1.5 border border-[#E2DDD3] hover:bg-[#EFECE6] text-[#4A554E] hover:text-[#1E2923] text-xs font-semibold rounded-xl transition-all cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">Salir</span>
+                <span className="hidden sm:inline">Salir</span>
               </button>
             </div>
 
           </div>
 
-          {/* Menú responsive */}
+          {/* Menú responsive para celulares y tablets */}
           <div className="lg:hidden flex items-center gap-1.5 pb-2.5 pt-1 overflow-x-auto">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -295,7 +376,7 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
               );
             })}
 
-            {esCuentaDireccion && (
+            {cuentaEsAdminMaster && (
               <>
                 <button
                   onClick={() => setSeccionActiva('consultorio')}
@@ -321,14 +402,173 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
           </div>
 
         </div>
+
+        {/* CARTEL FLOTANTE DE CONFIRMACIÓN */}
+        {avisoTurnoExito && (
+          <div className="bg-[#1A2E24] text-emerald-200 text-xs font-bold text-center py-1.5 px-4 border-t border-[#2D4D3D] flex items-center justify-center gap-2 animate-in fade-in duration-200">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{avisoTurnoExito}</span>
+          </div>
+        )}
       </header>
 
-      {/* MODAL MULTIFUNCIÓN DE CONFIGURACIÓN */}
+      {/* MODAL EXPRESS: CAMBIO DE TURNO PROTEGIDO CON CONTRASEÑA */}
+      {modalCambioTurno && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white border border-[#E8E3DA] rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            
+            <div className="flex items-center justify-between pb-3 border-b border-[#F0EBE3]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#1A2E24] text-white flex items-center justify-center">
+                  <KeyRound className="w-4 h-4 text-[#E3A382]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E2923]">Cambio de Turno / Operador</h3>
+                  <p className="text-[11px] text-[#6F7D74]">Relevo de mostrador con contraseña</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalCambioTurno(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Paso 1: Elegir a qué operador relevar */}
+            {!operadorSeleccionado ? (
+              <div className="space-y-2">
+                <span className="block text-[11px] font-bold uppercase tracking-wider text-[#4A554E] mb-2">
+                  ¿Quién toma el mostrador?
+                </span>
+
+                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                  {/* Opción Lic. Sandra */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOperadorSeleccionado({
+                        nombre: 'Lic. Sandra',
+                        email: emailLimpio === 'sandell661@gmail.com' ? 'sandell661@gmail.com' : 'admin@centrociap.com.ar'
+                      });
+                      setErrorClaveTurno('');
+                      setClaveTurnoInput('');
+                    }}
+                    className="w-full p-2.5 bg-[#FAF8F5] hover:bg-[#EFECE6] border border-[#DDD6CC] rounded-2xl flex items-center justify-between transition-all cursor-pointer text-left group"
+                  >
+                    <div>
+                      <span className="text-xs font-bold text-[#1E2923] block group-hover:text-[#A8532F]">
+                        Lic. Sandra
+                      </span>
+                      <span className="text-[10px] text-[#A8532F] font-semibold">Dirección General</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-[#1E2923]" />
+                  </button>
+
+                  {/* Operadores de Recepción */}
+                  {recepcionistas.map(r => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => {
+                        setOperadorSeleccionado({ nombre: r.nombre, email: r.email });
+                        setErrorClaveTurno('');
+                        setClaveTurnoInput('');
+                      }}
+                      className="w-full p-2.5 bg-[#FAF8F5] hover:bg-[#EFECE6] border border-[#DDD6CC] rounded-2xl flex items-center justify-between transition-all cursor-pointer text-left group"
+                    >
+                      <div>
+                        <span className="text-xs font-bold text-[#1E2923] block group-hover:text-[#223D30]">
+                          {r.nombre}
+                        </span>
+                        <span className="text-[10px] text-[#6F7D74]">{r.email}</span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-[#1E2923]" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* Paso 2: Ingresar la contraseña del operador */
+              <form onSubmit={handleConfirmarCambioTurno} className="space-y-3.5">
+                <div className="p-3 bg-[#FAF8F5] border border-[#DDD6CC] rounded-2xl flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-[#6F7D74] uppercase block font-bold">Ingresando como</span>
+                    <strong className="text-xs text-[#1E2923]">{operadorSeleccionado.nombre}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOperadorSeleccionado(null)}
+                    className="text-[11px] text-[#A8532F] hover:underline font-semibold cursor-pointer"
+                  >
+                    Cambiar
+                  </button>
+                </div>
+
+                {errorClaveTurno && (
+                  <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl font-medium">
+                    {errorClaveTurno}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#4A554E] mb-1">
+                    Contraseña de {operadorSeleccionado.nombre}
+                  </label>
+                  <input
+                    type="password"
+                    autoFocus
+                    required
+                    value={claveTurnoInput}
+                    onChange={(e) => setClaveTurnoInput(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#223D30] focus:bg-white"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#F0EBE3]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOperadorSeleccionado(null);
+                      setClaveTurnoInput('');
+                      setErrorClaveTurno('');
+                    }}
+                    className="px-3 py-2 text-xs text-[#4A554E] hover:text-[#1E2923] cursor-pointer font-medium"
+                  >
+                    Atrás
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={verificandoClave || !claveTurnoInput.trim()}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-[#223D30] hover:bg-[#182C22] text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40 cursor-pointer shadow-xs"
+                  >
+                    {verificandoClave ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Validando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Ingresar a Turno</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* MODAL MULTIFUNCIÓN DE CONFIGURACIÓN (TUERCA) */}
       {modalConfigAbierto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white border border-[#E8E3DA] rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-xl space-y-4">
             
-            {/* Cabecera del Modal */}
             <div className="flex items-center justify-between pb-3 border-b border-[#F0EBE3]">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-[#FAF8F5] border border-[#DDD6CC] text-[#223D30] flex items-center justify-center">
@@ -347,7 +587,6 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
               </button>
             </div>
 
-            {/* Pestañas internas del Modal */}
             <div className="flex items-center gap-1 bg-[#FAF8F5] p-1 rounded-2xl border border-[#DDD6CC] text-xs font-semibold">
               <button
                 type="button"
@@ -373,10 +612,8 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
               </button>
             </div>
 
-            {/* VISTA 1: GESTIÓN DE RECEPCIONISTAS */}
             {pestañaConfig === 'operadores' && (
               <div className="space-y-4 text-xs">
-                
                 {opExito && (
                   <div className="p-3 bg-[#EAF5EF] border border-[#BCE1CC] text-[#1E5C38] rounded-xl flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 shrink-0 text-[#2E8B57]" />
@@ -391,7 +628,6 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
                   </div>
                 )}
 
-                {/* Formulario de Alta */}
                 <form onSubmit={handleCrearRecepcionista} className="p-3.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-2xl space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-[#1E2923] text-xs flex items-center gap-1.5">
@@ -440,7 +676,6 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
                   </div>
                 </form>
 
-                {/* Listado de Recepcionistas */}
                 <div>
                   <span className="block font-bold text-[#1E2923] text-[11px] uppercase tracking-wider mb-2">
                     Operadores Activos en el Sistema ({recepcionistas.length})
@@ -487,7 +722,6 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
               </div>
             )}
 
-            {/* VISTA 2: PUESTA EN CERO (RESET LIMPIO PARA DIRECCIÓN) */}
             {pestañaConfig === 'reset' && (
               <div className="space-y-4 text-xs">
                 {resetExitoso ? (
@@ -502,7 +736,7 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
                       <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                       <div className="text-amber-900 leading-relaxed">
                         <strong className="block font-bold mb-0.5">Puesta en Cero de la Base de Datos</strong>
-                        Esta función restablece las colecciones de pacientes, turnos, sesiones y gastos de prueba. Los psicólogos registrados, operadores y contraseñas se mantienen intactos.
+                        Esta función restablece las colecciones de pacientes, turnos, sesiones y gastos de prueba. Los psicólogos registrados, operadores y contraseñas se mantienen intactos[cite: 7].
                       </div>
                     </div>
 
@@ -528,7 +762,7 @@ export default function AdminHeader({ seccionActiva, setSeccionActiva }: Props) 
                         Cancelar
                       </button>
                       <button
-                        type="button"
+                        type="submit"
                         disabled={confirmacionTexto.trim().toUpperCase() !== 'LIMPIAR' || reseteando}
                         onClick={handleEjecutarReset}
                         className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40 cursor-pointer shadow-xs"
