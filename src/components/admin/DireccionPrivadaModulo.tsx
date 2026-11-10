@@ -104,7 +104,11 @@ export default function DireccionPrivadaModulo() {
   const [cargandoTurnos, setCargandoTurnos] = useState(false);
   const [turnoExito, setTurnoExito] = useState(false);
 
-  // Formulario Nuevo Turno Privado (con Medio / Cuenta de Cobro)
+  // Filtros y buscador para la Agenda de Sandra
+  const [filtroEstadoTurno, setFiltroEstadoTurno] = useState<'Todos' | 'Pendiente' | 'Cobrado'>('Todos');
+  const [busquedaTurno, setBusquedaTurno] = useState('');
+
+  // Formulario Nuevo Turno Privado
   const [pacienteTurnoNombre, setPacienteTurnoNombre] = useState('');
   const [fechaTurnoPrivado, setFechaTurnoPrivado] = useState(() => new Date().toISOString().slice(0, 10));
   const [horaTurnoPrivado, setHoraTurnoPrivado] = useState('17:00');
@@ -336,13 +340,11 @@ export default function DireccionPrivadaModulo() {
   const handleAsentarCobroTurno = async (turno: TurnoPrivado) => {
     const cuentaFinal = turno.cuentaDestino || 'Mercado Pago';
     try {
-      // 1. Actualizar estado del turno a Cobrado
       await updateDoc(doc(db, 'turnos_privados_direccion', turno.id), {
         estado: 'Cobrado',
         cuentaDestino: cuentaFinal
       });
 
-      // 2. Registrar automáticamente el ingreso en el libro contable de Sandra con la cuenta correcta
       await guardarMovimientoDireccion({
         tipo: 'Ingreso',
         subtipo: 'Paciente Propio',
@@ -369,6 +371,29 @@ export default function DireccionPrivadaModulo() {
       console.error('Error eliminando turno:', e);
     }
   };
+
+  // Turnos filtrados para la Agenda de Sandra
+  const turnosFiltrados = useMemo(() => {
+    return turnosPrivados.filter(t => {
+      if (filtroEstadoTurno !== 'Todos' && t.estado !== filtroEstadoTurno) return false;
+      if (!busquedaTurno.trim()) return true;
+      const q = busquedaTurno.toLowerCase();
+      return (
+        t.pacienteNombre.toLowerCase().includes(q) ||
+        t.fecha.includes(q) ||
+        (t.cuentaDestino && t.cuentaDestino.toLowerCase().includes(q)) ||
+        t.modalidad.toLowerCase().includes(q)
+      );
+    });
+  }, [turnosPrivados, filtroEstadoTurno, busquedaTurno]);
+
+  const cantPendientes = useMemo(() => {
+    return turnosPrivados.filter(t => t.estado === 'Pendiente').length;
+  }, [turnosPrivados]);
+
+  const cantCobrados = useMemo(() => {
+    return turnosPrivados.filter(t => t.estado === 'Cobrado').length;
+  }, [turnosPrivados]);
 
   // Guardar Categoría de Finanzas
   const handleGuardarNuevaCategoria = (e: React.FormEvent) => {
@@ -663,7 +688,7 @@ export default function DireccionPrivadaModulo() {
           <CalendarDays className="w-4 h-4" />
           <span>Agenda y Pacientes Particulares</span>
           <span className="ml-1 text-[10px] px-1.5 py-0.2 rounded-md bg-[#385B49] text-white">
-            {turnosPrivados.filter(t => t.estado === 'Pendiente').length} pendientes
+            {cantPendientes} pendientes
           </span>
         </button>
 
@@ -806,28 +831,96 @@ export default function DireccionPrivadaModulo() {
             </form>
           </div>
 
-          {/* Lista de Turnos Agendados de Sandra */}
+          {/* Lista de Turnos Agendados de Sandra con Filtros y Buscador */}
           <div className="xl:col-span-7 bg-white border border-[#E8E3DA] rounded-3xl p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between pb-4 border-b border-[#F0EBE3]">
-              <div>
-                <h3 className="text-sm font-bold text-[#1E2923]">Turnos Particulares Agendados</h3>
-                <p className="text-[11px] text-[#6F7D74]">
-                  Total: <strong className="text-[#1E2923]">{turnosPrivados.length}</strong> citas particulares
-                </p>
+            
+            <div className="space-y-3 pb-4 border-b border-[#F0EBE3]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E2923]">Turnos Particulares Agendados</h3>
+                  <p className="text-[11px] text-[#6F7D74]">
+                    Mostrando <strong className="text-[#1E2923]">{turnosFiltrados.length}</strong> de <strong className="text-[#1E2923]">{turnosPrivados.length}</strong> citas
+                  </p>
+                </div>
+
+                <span className="text-[11px] font-bold text-[#A8532F] bg-[#FAF8F5] border border-[#DDD6CC] px-2.5 py-1 rounded-xl">
+                  Sandra · Particulares
+                </span>
               </div>
 
-              <span className="text-[11px] font-bold text-[#A8532F] bg-[#FAF8F5] border border-[#DDD6CC] px-2.5 py-1 rounded-xl">
-                Sandra · Particulares
-              </span>
+              {/* FILTROS (TODOS, PENDIENTES, ASENTADOS) + BUSCADOR */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
+                <div className="flex items-center bg-[#FAF8F5] border border-[#DDD6CC] p-1 rounded-xl text-[11px] font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setFiltroEstadoTurno('Todos')}
+                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                      filtroEstadoTurno === 'Todos' ? 'bg-[#223D30] text-white shadow-2xs' : 'text-[#6F7D74] hover:text-[#1E2923]'
+                    }`}
+                  >
+                    Todos ({turnosPrivados.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFiltroEstadoTurno('Pendiente')}
+                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                      filtroEstadoTurno === 'Pendiente' ? 'bg-amber-600 text-white shadow-2xs' : 'text-[#6F7D74] hover:text-[#1E2923]'
+                    }`}
+                  >
+                    <span>Pendientes</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                      filtroEstadoTurno === 'Pendiente' ? 'bg-amber-700 text-white' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {cantPendientes}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFiltroEstadoTurno('Cobrado')}
+                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                      filtroEstadoTurno === 'Cobrado' ? 'bg-emerald-800 text-white shadow-2xs' : 'text-[#6F7D74] hover:text-[#1E2923]'
+                    }`}
+                  >
+                    <span>Asentados</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                      filtroEstadoTurno === 'Cobrado' ? 'bg-emerald-900 text-white' : 'bg-emerald-100 text-emerald-800'
+                    }`}>
+                      {cantCobrados}
+                    </span>
+                  </button>
+                </div>
+
+                <div className="relative w-full sm:w-56">
+                  <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={busquedaTurno}
+                    onChange={(e) => setBusquedaTurno(e.target.value)}
+                    placeholder="Buscar paciente, fecha..."
+                    className="w-full pl-8 pr-2.5 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#223D30]"
+                  />
+                  {busquedaTurno && (
+                    <button
+                      type="button"
+                      onClick={() => setBusquedaTurno('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 text-xs"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="overflow-y-auto max-h-[calc(100vh-320px)] pr-1 space-y-2.5">
-              {turnosPrivados.length === 0 ? (
+              {turnosFiltrados.length === 0 ? (
                 <div className="py-16 text-center text-[#8C9B91] text-xs">
-                  No tenés turnos particulares agendados. Podés cargar el primero con el formulario.
+                  {turnosPrivados.length === 0
+                    ? 'No tenés turnos particulares agendados. Podés cargar el primero con el formulario.'
+                    : 'No se encontraron turnos con los filtros seleccionados.'}
                 </div>
               ) : (
-                turnosPrivados.map((turno) => {
+                turnosFiltrados.map((turno) => {
                   const yaCobrado = turno.estado === 'Cobrado';
 
                   return (
@@ -1345,7 +1438,7 @@ export default function DireccionPrivadaModulo() {
                 <button
                   type="button"
                   onClick={() => setModalNuevaCat(false)}
-                  className="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800"
+                  className="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 cursor-pointer"
                 >
                   Cancelar
                 </button>
