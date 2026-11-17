@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
-import { doc, updateDoc, deleteDoc } from 'firebase/firestore'; // Agregamos deleteDoc
+import { doc, deleteDoc } from 'firebase/firestore'; 
 import { 
   obtenerPacientes, 
   obtenerSesiones, 
@@ -37,8 +37,8 @@ import {
   ArrowLeft,
   CalendarClock,
   X,
-  Trash2, // Para que Sandra pueda borrar
-  Edit3 // Icono para gestionar el turno
+  Trash2,
+  Edit3 
 } from 'lucide-react';
 
 interface Props {
@@ -201,7 +201,6 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
   const handleConfirmarGestion = async () => {
     if (!sesionAGestionar) return;
     
-    // Si no se atendió, obligar a poner motivo
     if (nuevoEstadoAsistencia !== 'Atendida' && !motivoGestion.trim()) {
       alert('Debes ingresar un motivo para informar a Recepción.');
       return;
@@ -210,13 +209,12 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
     setGuardandoGestion(true);
     try {
       const datosActualizados: any = { estadoAsistencia: nuevoEstadoAsistencia };
-
       let textoNota = '';
 
       if (nuevoEstadoAsistencia === 'Reprogramar') {
         datosActualizados.fecha = nuevaFechaReprogramacion;
         datosActualizados.hora = nuevaHoraReprogramacion;
-        datosActualizados.estadoAsistencia = 'Pendiente'; // Vuelve a quedar pendiente en la nueva fecha
+        datosActualizados.estadoAsistencia = 'Pendiente'; 
         
         textoNota = `El profesional reprogramó el turno del ${sesionAGestionar.fecha} para el ${nuevaFechaReprogramacion} a las ${nuevaHoraReprogramacion} hs. Motivo: ${motivoGestion}`;
       } else {
@@ -239,7 +237,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
 
   // 4. Borrar Sesión (EXCLUSIVO SANDRA)
   const handleBorrarSesion = async (sesionId: string, nombrePaciente: string) => {
-    if (!esSandra) return; // Doble validación de seguridad
+    if (!esSandra) return; 
     if (!window.confirm(`¿Estás segura de eliminar permanentemente el turno de ${nombrePaciente} de la agenda?`)) return;
 
     try {
@@ -314,11 +312,15 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
     setFechaTurno(hoyIso);
   };
 
-  const pacientesFiltrados = misPacientes.filter(p =>
-    `${p.nombre} ${p.apellido} ${p.dni} ${p.diasAtencion || ''}`
+  const pacientesFiltrados = misPacientes.filter(p => {
+    const pData = p as any;
+    const esBaja = pData.estado === 'De Baja';
+    if (esBaja) return false; // En profesionales ocultamos las Bajas
+
+    return `${p.nombre} ${p.apellido} ${p.dni} ${p.diasAtencion || ''}`
       .toLowerCase()
-      .includes(busqueda.toLowerCase())
-  );
+      .includes(busqueda.toLowerCase());
+  });
 
   return (
     <div className="min-h-screen bg-[#F7F5F0] text-[#1E2923] pb-12">
@@ -695,7 +697,6 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                   ) : (
                     sesionesDelDiaSeleccionado.map((sesion) => {
                       const asistencia = (sesion as any).estadoAsistencia || 'Atendida';
-                      // Lógica de cobro: Solo muestra pendiente de cobro si se atendió
                       const requiereCobro = asistencia === 'Atendida';
 
                       return (
@@ -715,7 +716,6 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
 
                           <div className="flex items-center justify-between text-xs pt-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              {/* ETIQUETAS DE ESTADO */}
                               {asistencia === 'Pendiente' && (
                                 <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
                                   <Clock className="w-3 h-3 text-amber-600" />
@@ -753,9 +753,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                               </span>
                             </div>
                             
-                            {/* ESTADO DE COBRO / BOTONERA GESTIÓN */}
                             <div className="flex items-center gap-3">
-                              {/* Texto Cobro (Oculto si no fue atendida) */}
                               {!requiereCobro ? (
                                 <span className="text-[10px] text-zinc-400 font-semibold italic">Cobro al atender</span>
                               ) : (
@@ -764,7 +762,6 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                                 </span>
                               )}
                               
-                              {/* Botones de acción del turno */}
                               <div className="flex items-center gap-1.5 border-l border-[#DDD6CC] pl-3 ml-1">
                                 <button
                                   type="button"
@@ -775,7 +772,6 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                                   <span>Gestionar</span>
                                 </button>
 
-                                {/* Papelera solo para Sandra */}
                                 {esSandra && (
                                   <button
                                     type="button"
@@ -913,7 +909,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                 <div>
                   <h3 className="text-base font-bold text-[#1E2923]">Historial de Liquidaciones de Honorarios</h3>
                   <p className="text-xs text-[#6F7D74]">
-                    Comprobantes y transferencias enviadas por Administración de Centro CIAP los viernes (60% honorarios)[cite: 22].
+                    Comprobantes y transferencias enviadas por Administración de Centro CIAP los viernes (60% honorarios).
                   </p>
                 </div>
 
@@ -974,7 +970,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                 <div>
                   <h3 className="text-base font-bold text-[#1E2923]">Sesiones Registradas y Estado de Liquidación</h3>
                   <p className="text-xs text-[#6F7D74]">
-                    Seguimiento detallado de turnos realizados y su cómputo para la liquidación semanal del 60%[cite: 22].
+                    Seguimiento detallado de turnos realizados y su cómputo para la liquidación semanal del 60%.
                   </p>
                 </div>
 
@@ -1140,7 +1136,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                         required
                         value={nuevaFechaReprogramacion}
                         onChange={(e) => setNuevaFechaReprogramacion(e.target.value)}
-                        className="w-full px-2 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-lg text-xs font-medium"
+                        className="w-full px-2 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-lg text-xs font-medium [appearance:none] [-webkit-appearance:none]"
                       />
                     </div>
                     <div>
@@ -1152,7 +1148,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                         required
                         value={nuevaHoraReprogramacion}
                         onChange={(e) => setNuevaHoraReprogramacion(e.target.value)}
-                        className="w-full px-2 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-lg text-xs font-medium"
+                        className="w-full px-2 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-lg text-xs font-medium [appearance:none] [-webkit-appearance:none]"
                       />
                     </div>
                  </div>
