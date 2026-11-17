@@ -108,10 +108,6 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
         );
         setMisPacientes(filtradosPacientes);
 
-        if (filtradosPacientes.length > 0 && !pacienteSeleccionadoId) {
-          setPacienteSeleccionadoId(filtradosPacientes[0].id);
-        }
-
         const filtradasSesiones = todasSesiones
           .filter(s => s.profesionalId === prof.id || s.profesionalNombre === prof.nombre)
           .sort((a, b) => (b.fechaIso || '').localeCompare(a.fechaIso || ''));
@@ -137,6 +133,27 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
   useEffect(() => {
     cargarDatos();
   }, [user]);
+
+  // NUEVO FILTRO PARA EL SELECTOR: Ocultar pacientes que ya tienen un turno "Pendiente" de atención
+  const pacientesParaAgendar = useMemo(() => {
+    return misPacientes.filter(paciente => {
+      const tieneTurnoPendiente = misSesiones.some(
+        sesion => sesion.pacienteId === paciente.id && (sesion as any).estadoAsistencia === 'Pendiente'
+      );
+      return !tieneTurnoPendiente; // Si tiene pendiente, no lo mostramos en la lista para no duplicar agendamiento
+    });
+  }, [misPacientes, misSesiones]);
+
+  // Autoseleccionar el primer paciente disponible si la lista cambia y no hay ninguno seleccionado
+  useEffect(() => {
+    if (pacientesParaAgendar.length > 0) {
+      if (!pacienteSeleccionadoId || !pacientesParaAgendar.find(p => p.id === pacienteSeleccionadoId)) {
+        setPacienteSeleccionadoId(pacientesParaAgendar[0].id);
+      }
+    } else {
+      setPacienteSeleccionadoId('');
+    }
+  }, [pacientesParaAgendar, pacienteSeleccionadoId]);
 
   const toggleColapsar = (id: string) => {
     setTarjetasColapsadas(prev => ({ ...prev, [id]: !prev[id] }));
@@ -170,7 +187,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
         modalidad: 'Virtual',
         importe: 0,
         estadoPago: 'Pendiente',
-        estadoAsistencia: 'Pendiente' // Siempre entra como pendiente
+        estadoAsistencia: 'Pendiente' // Siempre entra como pendiente estricto
       };
 
       await guardarSesion(sesionPayload);
@@ -178,7 +195,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
       setSesionExito(true);
       setTimeout(() => setSesionExito(false), 3000);
 
-      await cargarDatos();
+      await cargarDatos(); // Recargar los datos para que el paciente se oculte del selector al tener turno pendiente
     } catch (error) {
       console.error('Error al agendar sesión:', error);
       alert('No se pudo agendar el turno.');
@@ -226,7 +243,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
 
       setModalGestionAbierto(false);
       setSesionAGestionar(null);
-      await cargarDatos();
+      await cargarDatos(); // Al volver de "Pendiente" a otro estado, el paciente reaparece en el selector para la siguiente sesión
     } catch (error) {
       console.error('Error al gestionar turno:', error);
       alert('Ocurrió un error al actualizar el estado.');
@@ -315,7 +332,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
   const pacientesFiltrados = misPacientes.filter(p => {
     const pData = p as any;
     const esBaja = pData.estado === 'De Baja';
-    if (esBaja) return false; // En profesionales ocultamos las Bajas
+    if (esBaja) return false; 
 
     return `${p.nombre} ${p.apellido} ${p.dni} ${p.diasAtencion || ''}`
       .toLowerCase()
@@ -610,11 +627,11 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                     <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
                       Paciente Citado
                     </label>
-                    {misPacientes.length === 0 ? (
+                    {pacientesParaAgendar.length === 0 ? (
                       <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
                         {esSandra 
-                          ? 'No tienes pacientes derivados. Créalo en Admisión primero.' 
-                          : 'Aún no tenés pacientes derivados por recepción.'}
+                          ? 'No tienes pacientes pendientes de agendar.' 
+                          : 'Aún no tenés pacientes pendientes de agendar o derivados por recepción.'}
                       </p>
                     ) : (
                       <select
@@ -622,7 +639,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                         onChange={(e) => setPacienteSeleccionadoId(e.target.value)}
                         className="w-full px-3 py-2.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-bold text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] cursor-pointer"
                       >
-                        {misPacientes.map((p) => (
+                        {pacientesParaAgendar.map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.nombre} {p.apellido} (DNI: {p.dni})
                           </option>
@@ -667,7 +684,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
 
                   <button
                     type="submit"
-                    disabled={guardandoSesion || misPacientes.length === 0}
+                    disabled={guardandoSesion || pacientesParaAgendar.length === 0}
                     className="w-full mt-2 py-3 bg-[#223D30] hover:bg-[#182C22] text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50"
                   >
                     {guardandoSesion ? 'Agendando...' : 'Confirmar y Agendar'}
@@ -696,7 +713,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                     </div>
                   ) : (
                     sesionesDelDiaSeleccionado.map((sesion) => {
-                      const asistencia = (sesion as any).estadoAsistencia || 'Atendida';
+                      const asistencia = (sesion as any).estadoAsistencia || 'Pendiente';
                       const requiereCobro = asistencia === 'Atendida';
 
                       return (
@@ -716,6 +733,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
 
                           <div className="flex items-center justify-between text-xs pt-1">
                             <div className="flex items-center gap-2 flex-wrap">
+                              {/* ETIQUETAS DE ESTADO */}
                               {asistencia === 'Pendiente' && (
                                 <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
                                   <Clock className="w-3 h-3 text-amber-600" />
@@ -766,7 +784,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                                 <button
                                   type="button"
                                   onClick={() => abrirModalGestion(sesion)}
-                                  className="flex items-center gap-1 px-2.5 py-1 bg-white border border-[#DDD6CC] hover:bg-[#EFECE6] text-[#223D30] rounded-xl font-bold transition-all shadow-2xs"
+                                  className="flex items-center gap-1 px-2.5 py-1 bg-white border border-[#DDD6CC] hover:bg-[#EFECE6] text-[#223D30] rounded-xl font-bold transition-all shadow-2xs cursor-pointer"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
                                   <span>Gestionar</span>
@@ -777,7 +795,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                                     type="button"
                                     onClick={() => handleBorrarSesion(sesion.id, sesion.pacienteNombre)}
                                     title="Borrar turno (Exclusivo Dirección)"
-                                    className="p-1.5 rounded-xl hover:bg-red-50 text-zinc-400 hover:text-red-600 transition-colors"
+                                    className="p-1.5 rounded-xl hover:bg-red-50 text-zinc-400 hover:text-red-600 transition-colors cursor-pointer"
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </button>
@@ -805,7 +823,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
               <div>
                 <h3 className="text-base font-bold text-[#1E2923]">Pacientes Asignados por Recepción</h3>
                 <p className="text-xs text-[#6F7D74]">
-                  Fichas clínicas derivadas para tu atención con horarios acordados (comunicación centralizada en sede).
+                  Fichas clínicas derivadas para tu atención con horarios acordados.
                 </p>
               </div>
 
@@ -988,7 +1006,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                   {misSesiones.map((sesion) => {
                     const yaLiquidada = sesion.liquidada ?? false;
                     const esCobrado = sesion.estadoPago === 'Cobrado';
-                    const asistencia = (sesion as any).estadoAsistencia || 'Atendida';
+                    const asistencia = (sesion as any).estadoAsistencia || 'Pendiente';
 
                     return (
                       <div
