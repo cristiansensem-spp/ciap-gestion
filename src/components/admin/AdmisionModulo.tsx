@@ -26,8 +26,8 @@ import {
   UserCheck,
   AlertCircle,
   UserMinus,
-  Pencil, // NUEVO: Ícono para editar
-  X // NUEVO: Ícono para cancelar edición
+  Pencil, 
+  X 
 } from 'lucide-react';
 
 export default function AdmisionModulo() {
@@ -38,21 +38,32 @@ export default function AdmisionModulo() {
   const [cargando, setCargando] = useState(false);
   const [guardadoExito, setGuardadoExito] = useState(false);
 
-  // NUEVO ESTADO PARA MODO EDICIÓN
+  // ESTADO PARA MODO EDICIÓN
   const [editandoId, setEditandoId] = useState<string | null>(null);
 
-  // Formulario Paciente
+  // Formulario Paciente Titular
   const [nombre, setNombre] = useState('');
   const [apellido, setApellido] = useState('');
   const [dni, setDni] = useState('');
   const [edad, setEdad] = useState(''); 
   const [telefono, setTelefono] = useState('');
   const [modalidad, setModalidad] = useState<Modalidad | 'Presencial y Virtual'>('Presencial');
-  const [diasAtencion, setDiasAtencion] = useState('');
+  
+  // Estados de Fecha y Hora
+  const [fechaAtencion, setFechaAtencion] = useState('');
+  const [horaAtencion, setHoraAtencion] = useState('');
+  const [diasAtencionActual, setDiasAtencionActual] = useState(''); 
+
   const [especialidad, setEspecialidad] = useState('Terapia para adultos'); 
   const [profesionalId, setProfesionalId] = useState(''); 
   const [motivoConsulta, setMotivoConsulta] = useState('');
   const [notaInicial, setNotaInicial] = useState('');
+
+  // NUEVO: Estados para Terapia de Parejas (2do Integrante)
+  const [nombrePareja, setNombrePareja] = useState('');
+  const [apellidoPareja, setApellidoPareja] = useState('');
+  const [dniPareja, setDniPareja] = useState('');
+  const [edadPareja, setEdadPareja] = useState('');
 
   // Estados interactivos
   const [tarjetasColapsadas, setTarjetasColapsadas] = useState<{ [id: string]: boolean }>({});
@@ -60,9 +71,11 @@ export default function AdmisionModulo() {
   const [hilosAbiertos, setHilosAbiertos] = useState<{ [id: string]: boolean }>({});
   const [textoNuevaNota, setTextoNuevaNota] = useState<{ [id: string]: string }>({});
 
+  // Estados para Reasignación
   const [reasignandoPacienteId, setReasignandoPacienteId] = useState<string | null>(null);
   const [nuevoProfIdSeleccionado, setNuevoProfIdSeleccionado] = useState('');
-  const [nuevosDiasSeleccionados, setNuevosDiasSeleccionados] = useState('');
+  const [nuevaFechaReasignacion, setNuevaFechaReasignacion] = useState(() => new Date().toISOString().slice(0, 10));
+  const [nuevaHoraReasignacion, setNuevaHoraReasignacion] = useState('16:00');
   const [procesandoReasignacion, setProcesandoReasignacion] = useState(false);
 
   const cargarDatos = async () => {
@@ -82,7 +95,15 @@ export default function AdmisionModulo() {
     cargarDatos();
   }, []);
 
-  // NUEVO: Funciones para iniciar y cancelar edición
+  const formatearFechaYHora = (fechaStr: string, horaStr: string) => {
+    if (!fechaStr || !horaStr) return 'A coordinar';
+    const dias = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const d = new Date(fechaStr + 'T00:00:00'); 
+    const nombreDia = dias[d.getDay()];
+    const [yyyy, mm, dd] = fechaStr.split('-');
+    return `${nombreDia} ${dd}/${mm} a las ${horaStr} hs`;
+  };
+
   const handleIniciarEdicion = (paciente: Paciente) => {
     const pData = paciente as any;
     setEditandoId(paciente.id);
@@ -92,11 +113,19 @@ export default function AdmisionModulo() {
     setEdad(pData.edad || '');
     setTelefono(paciente.telefono || '');
     setModalidad(paciente.modalidad || 'Presencial');
-    setDiasAtencion(paciente.diasAtencion || '');
     setEspecialidad(pData.especialidad || 'Terapia para adultos');
     setProfesionalId(paciente.profesionalId || '');
     setMotivoConsulta(paciente.motivoConsulta || '');
-    setNotaInicial(''); // La nota inicial la dejamos vacía por si quieren sumar una nota extra al editar
+    setDiasAtencionActual(paciente.diasAtencion || 'A coordinar');
+    
+    // Limpiamos los campos temporales
+    setFechaAtencion('');
+    setHoraAtencion('');
+    setNombrePareja('');
+    setApellidoPareja('');
+    setDniPareja('');
+    setEdadPareja('');
+    setNotaInicial(''); 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -108,11 +137,17 @@ export default function AdmisionModulo() {
     setEdad('');
     setTelefono('');
     setModalidad('Presencial');
-    setDiasAtencion('');
+    setFechaAtencion('');
+    setHoraAtencion('');
+    setDiasAtencionActual('');
     setEspecialidad('Terapia para adultos');
     setProfesionalId('');
     setMotivoConsulta('');
     setNotaInicial('');
+    setNombrePareja('');
+    setApellidoPareja('');
+    setDniPareja('');
+    setEdadPareja('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -123,14 +158,34 @@ export default function AdmisionModulo() {
     try {
       const profElegido = profesionales.find(p => p.id === profesionalId);
       
+      let diasFinales = diasAtencionActual || 'A coordinar';
+      if (fechaAtencion && horaAtencion) {
+        diasFinales = formatearFechaYHora(fechaAtencion, horaAtencion);
+      } else if (!editandoId) {
+        diasFinales = 'A coordinar';
+      }
+
+      // LÓGICA DE UNIFICACIÓN PARA TERAPIA DE PAREJAS
+      let nombreFinal = nombre.trim();
+      let apellidoFinal = apellido.trim();
+      let dniFinal = dni.trim() || 'S/DNI';
+      let edadFinal = edad.trim() || 'S/E';
+
+      if (especialidad === 'Terapia de parejas') {
+        if (nombrePareja.trim()) nombreFinal += ` y ${nombrePareja.trim()}`;
+        if (apellidoPareja.trim()) apellidoFinal += ` y ${apellidoPareja.trim()}`;
+        if (dniPareja.trim()) dniFinal += ` / ${dniPareja.trim()}`;
+        if (edadPareja.trim()) edadFinal += ` / ${edadPareja.trim()}`;
+      }
+      
       const payloadPaciente = {
-        nombre: nombre.trim(),
-        apellido: apellido.trim(),
-        dni: dni.trim() || 'S/DNI',
-        edad: edad.trim() || 'S/E',
+        nombre: nombreFinal,
+        apellido: apellidoFinal,
+        dni: dniFinal,
+        edad: edadFinal,
         telefono: telefono.trim(),
         modalidad: modalidad as any,
-        diasAtencion: diasAtencion.trim() || 'A coordinar',
+        diasAtencion: diasFinales,
         especialidad: especialidad,
         profesionalId: profesionalId || '',
         profesionalNombre: profElegido ? profElegido.nombre : 'Sin asignar',
@@ -138,21 +193,18 @@ export default function AdmisionModulo() {
       };
 
       if (editandoId) {
-        // MODO EDICIÓN
         await actualizarPaciente(editandoId, payloadPaciente);
         if (notaInicial.trim() !== '') {
-          // Si escribieron algo en nota al editar, lo sumamos al hilo
           await agregarNotaAlHilo(editandoId, notaInicial.trim());
         }
-        handleCancelarEdicion(); // Volvemos a modo Nuevo Paciente
+        handleCancelarEdicion(); 
       } else {
-        // MODO NUEVO PACIENTE
         const nuevoPaciente = {
           ...payloadPaciente,
           estado: 'En Admisión',
         };
         await guardarPaciente(nuevoPaciente, notaInicial.trim() ? notaInicial.trim() : undefined);
-        handleCancelarEdicion(); // Limpiamos campos
+        handleCancelarEdicion(); 
       }
 
       setGuardadoExito(true);
@@ -184,7 +236,8 @@ export default function AdmisionModulo() {
   const iniciarReasignacion = (paciente: Paciente) => {
     setReasignandoPacienteId(paciente.id);
     setNuevoProfIdSeleccionado(paciente.profesionalId || (profesionales.length > 0 ? profesionales[0].id : ''));
-    setNuevosDiasSeleccionados(paciente.diasAtencion || '');
+    setNuevaFechaReasignacion(new Date().toISOString().slice(0, 10));
+    setNuevaHoraReasignacion('16:00');
   };
 
   const handleConfirmarReasignacion = async (pacienteId: string) => {
@@ -194,7 +247,7 @@ export default function AdmisionModulo() {
 
     setProcesandoReasignacion(true);
     try {
-      const diasFinales = nuevosDiasSeleccionados.trim() || 'A coordinar';
+      const diasFinales = formatearFechaYHora(nuevaFechaReasignacion, nuevaHoraReasignacion);
       
       await actualizarPaciente(pacienteId, {
         profesionalId: nuevoProf.id,
@@ -204,7 +257,7 @@ export default function AdmisionModulo() {
 
       await agregarNotaAlHilo(
         pacienteId, 
-        `Reasignado/a a ${nuevoProf.nombre} por administración. Horarios acordados: ${diasFinales}.`
+        `Reasignado/a a ${nuevoProf.nombre} por administración. Horario acordado: ${diasFinales}.`
       );
 
       setReasignandoPacienteId(null);
@@ -254,7 +307,6 @@ export default function AdmisionModulo() {
     setHilosAbiertos(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  // Filtrado Seguro
   const pacientesFiltrados = useMemo(() => {
     return pacientes.filter(p => {
       const pData = p as any;
@@ -328,7 +380,6 @@ export default function AdmisionModulo() {
               </div>
             </div>
 
-            {/* BOTÓN CANCELAR EDICIÓN */}
             {editandoId && (
               <button
                 type="button"
@@ -349,6 +400,7 @@ export default function AdmisionModulo() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-3.5">
+            
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
@@ -379,7 +431,6 @@ export default function AdmisionModulo() {
               </div>
             </div>
 
-            {/* Fila agrupada: DNI, Edad y Teléfono en 3 columnas */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
@@ -442,13 +493,25 @@ export default function AdmisionModulo() {
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
                   Días de Atención / Preferencia
                 </label>
-                <input
-                  type="text"
-                  value={diasAtencion}
-                  onChange={(e) => setDiasAtencion(e.target.value)}
-                  placeholder="Ej: Lunes y Miércoles tardes"
-                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] focus:bg-white"
-                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={fechaAtencion}
+                    onChange={(e) => setFechaAtencion(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium text-[#1E2923] transition-all [appearance:none] [-webkit-appearance:none]"
+                  />
+                  <input
+                    type="time"
+                    value={horaAtencion}
+                    onChange={(e) => setHoraAtencion(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium text-[#1E2923] transition-all [appearance:none] [-webkit-appearance:none]"
+                  />
+                </div>
+                {editandoId && diasAtencionActual && (
+                  <span className="text-[9px] text-[#A8532F] font-bold mt-1 block">
+                    Actual: {diasAtencionActual} (Llenar solo para cambiarlo)
+                  </span>
+                )}
               </div>
             </div>
 
@@ -471,6 +534,69 @@ export default function AdmisionModulo() {
                 <option value="Orientación vocacional">Orientación vocacional</option>
               </select>
             </div>
+
+            {/* SECCIÓN CONDICIONAL: TERAPIA DE PAREJAS */}
+            {especialidad === 'Terapia de parejas' && (
+              <div className="p-4 bg-rose-50/50 border border-rose-200 rounded-xl space-y-3 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between">
+                  <span className="block text-[11px] font-bold text-rose-800 uppercase tracking-wider">
+                    Datos del 2do Integrante (Pareja)
+                  </span>
+                </div>
+                
+                {editandoId && (
+                  <p className="text-[10px] text-rose-600 font-medium -mt-2">
+                    Si los nombres ya están unidos en la ficha principal de arriba, podés dejar esto en blanco.
+                  </p>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-rose-700 mb-1">Nombre</label>
+                    <input 
+                      type="text" 
+                      value={nombrePareja} 
+                      onChange={(e) => setNombrePareja(e.target.value)} 
+                      placeholder="Ej: Juan"
+                      className="w-full px-3 py-2 bg-white border border-rose-200 rounded-lg text-xs font-medium text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-rose-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-rose-700 mb-1">Apellido</label>
+                    <input 
+                      type="text" 
+                      value={apellidoPareja} 
+                      onChange={(e) => setApellidoPareja(e.target.value)} 
+                      placeholder="Ej: Pérez"
+                      className="w-full px-3 py-2 bg-white border border-rose-200 rounded-lg text-xs font-medium text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-rose-400"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-rose-700 mb-1">DNI (Sin Puntos)</label>
+                    <input 
+                      type="text" 
+                      value={dniPareja} 
+                      onChange={(e) => setDniPareja(e.target.value)} 
+                      placeholder="Ej: 35123456"
+                      className="w-full px-3 py-2 bg-white border border-rose-200 rounded-lg text-xs font-mono font-medium text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-rose-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-rose-700 mb-1">Edad</label>
+                    <input 
+                      type="number" 
+                      value={edadPareja} 
+                      onChange={(e) => setEdadPareja(e.target.value)} 
+                      placeholder="Ej: 36"
+                      className="w-full px-3 py-2 bg-white border border-rose-200 rounded-lg text-xs font-mono font-medium text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-rose-400"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
@@ -724,7 +850,6 @@ export default function AdmisionModulo() {
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {/* NUEVO: Botón Editar Paciente (Oculto si está de baja) */}
                         {!esBaja && (
                           <button
                             type="button"
@@ -814,17 +939,35 @@ export default function AdmisionModulo() {
                             </select>
                           </div>
 
-                          <div>
-                            <label className="block text-[10px] font-bold uppercase text-[#6F7D74] mb-0.5">
-                              Días / Horario acordado con el paciente
-                            </label>
-                            <input
-                              type="text"
-                              value={nuevosDiasSeleccionados}
-                              onChange={(e) => setNuevosDiasSeleccionados(e.target.value)}
-                              placeholder="Ej: Miércoles 16:00 hs o Martes y Jueves mañana"
-                              className="w-full px-2.5 py-1.5 bg-white border border-[#DDD6CC] rounded-xl text-xs font-medium text-[#1E2923]"
-                            />
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase text-[#6F7D74] mb-0.5">
+                                Fecha de Inicio
+                              </label>
+                              <input
+                                type="date"
+                                required
+                                value={nuevaFechaReasignacion}
+                                onChange={(e) => setNuevaFechaReasignacion(e.target.value)}
+                                className="w-full px-2.5 py-1.5 bg-white border border-[#DDD6CC] rounded-xl text-xs font-medium text-[#1E2923] transition-all [appearance:none] [-webkit-appearance:none]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase text-[#6F7D74] mb-0.5">
+                                Hora
+                              </label>
+                              <input
+                                type="time"
+                                required
+                                value={nuevaHoraReasignacion}
+                                onChange={(e) => setNuevaHoraReasignacion(e.target.value)}
+                                className="w-full px-2.5 py-1.5 bg-white border border-[#DDD6CC] rounded-xl text-xs font-medium text-[#1E2923] transition-all [appearance:none] [-webkit-appearance:none]"
+                              />
+                            </div>
+                          </div>
+                          
+                          <div className="text-[9px] text-[#8C9B91] italic pt-0.5">
+                            Turno anterior: {paciente.diasAtencion}
                           </div>
                         </div>
 
