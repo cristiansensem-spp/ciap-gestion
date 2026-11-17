@@ -40,6 +40,7 @@ export default function AdmisionModulo() {
   const [nombre, setNombre] = useState('');
   const [apellido, setApellido] = useState('');
   const [dni, setDni] = useState('');
+  const [edad, setEdad] = useState(''); // NUEVO: Estado para la edad
   const [telefono, setTelefono] = useState('');
   const [modalidad, setModalidad] = useState<Modalidad | 'Presencial y Virtual'>('Presencial');
   const [diasAtencion, setDiasAtencion] = useState('');
@@ -88,6 +89,7 @@ export default function AdmisionModulo() {
         nombre: nombre.trim(),
         apellido: apellido.trim(),
         dni: dni.trim() || 'S/DNI',
+        edad: edad.trim() || 'S/E', // <-- Guardamos la edad (S/E = Sin Especificar)
         telefono: telefono.trim(),
         modalidad: modalidad as any,
         diasAtencion: diasAtencion.trim() || 'A coordinar',
@@ -103,6 +105,7 @@ export default function AdmisionModulo() {
       setNombre('');
       setApellido('');
       setDni('');
+      setEdad(''); // <-- Limpiamos el campo de edad
       setTelefono('');
       setDiasAtencion('');
       setEspecialidad('Terapia para adultos');
@@ -214,6 +217,7 @@ export default function AdmisionModulo() {
       const pData = p as any;
       const esBaja = pData.estado === 'De Baja';
       const especialidad = pData.especialidad || '';
+      const edadStr = pData.edad || '';
 
       if (filtroEstado === 'Bajas' && !esBaja) return false;
       if (filtroEstado !== 'Bajas' && esBaja) return false;
@@ -221,7 +225,7 @@ export default function AdmisionModulo() {
 
       if (busqueda.trim() !== '') {
         const termino = busqueda.toLowerCase();
-        const coincideBuscador = `${p.nombre} ${p.apellido} ${p.dni} ${p.telefono} ${p.profesionalNombre || ''} ${p.diasAtencion || ''} ${p.motivoConsulta || ''} ${especialidad}`
+        const coincideBuscador = `${p.nombre} ${p.apellido} ${p.dni} ${p.telefono} ${edadStr} ${p.profesionalNombre || ''} ${p.diasAtencion || ''} ${p.motivoConsulta || ''} ${especialidad}`
           .toLowerCase()
           .includes(termino);
         if (!coincideBuscador) return false;
@@ -310,7 +314,8 @@ export default function AdmisionModulo() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Fila agrupada: DNI, Edad y Teléfono en 3 columnas */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
                   DNI (Sin Puntos)
@@ -320,6 +325,19 @@ export default function AdmisionModulo() {
                   value={dni}
                   onChange={(e) => setDni(e.target.value)}
                   placeholder="Ej: 34125890"
+                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-mono font-medium text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
+                  Edad
+                </label>
+                <input
+                  type="number"
+                  value={edad}
+                  onChange={(e) => setEdad(e.target.value)}
+                  placeholder="Ej: 34"
                   className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-mono font-medium text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] focus:bg-white"
                 />
               </div>
@@ -553,7 +571,8 @@ export default function AdmisionModulo() {
                 const pData = paciente as any;
                 const sinAsignar = paciente.profesionalNombre === 'Sin asignar';
                 const esBaja = pData.estado === 'De Baja';
-                const especialidadPaciente = pData.especialidad; 
+                const especialidadPaciente = pData.especialidad;
+                const edadPaciente = pData.edad; // <-- Usamos el valor
 
                 let cardStyle = 'border-[#EFECE6] bg-[#FCFBF9] hover:bg-white hover:border-[#DDD6CC]';
                 if (esBaja) {
@@ -609,6 +628,15 @@ export default function AdmisionModulo() {
                         <div className={`flex items-center gap-2 mt-1 text-[11px] font-mono flex-wrap ${esBaja ? 'text-zinc-500' : 'text-[#6F7D74]'}`}>
                           <span>DNI: {paciente.dni}</span>
                           <span>•</span>
+                          
+                          {/* MOSTRAMOS LA EDAD EN LA TARJETA */}
+                          {edadPaciente && (
+                            <>
+                              <span className="font-semibold">{edadPaciente} años</span>
+                              <span>•</span>
+                            </>
+                          )}
+
                           <span className="flex items-center gap-1">
                             <Phone className={`w-3 h-3 ${esBaja ? 'text-zinc-400' : 'text-[#223D30]'}`} />
                             <strong className={`text-xs font-sans ${esBaja ? 'text-zinc-500' : 'text-[#1E2923]'}`}>
