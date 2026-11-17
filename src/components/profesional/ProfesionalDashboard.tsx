@@ -2,14 +2,16 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { db } from '../../lib/firebase';
+import { doc, updateDoc, deleteDoc } from 'firebase/firestore'; // Agregamos deleteDoc
 import { 
   obtenerPacientes, 
   obtenerSesiones, 
   guardarSesion, 
   obtenerProfesionales,
   obtenerGastos,
-  rectificarSesion, // NUEVO: para actualizar el estado de la sesión
-  agregarNotaAlHilo // NUEVO: para registrar motivos de ausencia/reprogramación
+  rectificarSesion, 
+  agregarNotaAlHilo 
 } from '../../lib/servicios';
 import { Paciente, Sesion, Profesional, Gasto } from '../../types';
 import { 
@@ -34,7 +36,9 @@ import {
   AlertCircle,
   ArrowLeft,
   CalendarClock,
-  X
+  X,
+  Trash2, // Para que Sandra pueda borrar
+  Edit3 // Icono para gestionar el turno
 } from 'lucide-react';
 
 interface Props {
@@ -51,7 +55,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
   const [misLiquidaciones, setMisLiquidaciones] = useState<Gasto[]>([]);
   const [cargando, setCargando] = useState(true);
 
-  // Navegación: Sesiones -> Pacientes -> Liquidaciones al final
+  // Navegación
   const [pestañaActiva, setPestañaActiva] = useState<'sesiones' | 'pacientes' | 'liquidaciones'>('sesiones');
   const [busqueda, setBusqueda] = useState('');
 
@@ -62,21 +66,23 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
   const [fechaBaseSemana, setFechaBaseSemana] = useState(() => new Date());
   const [fechaSeleccionadaAgenda, setFechaSeleccionadaAgenda] = useState(() => new Date().toISOString().slice(0, 10));
 
-  // Formulario: Asentar Sesión Virtual Realizada
+  // Formulario Izquierdo: SOLO PARA AGENDAR TURNOS NUEVOS
   const [pacienteSeleccionadoId, setPacienteSeleccionadoId] = useState('');
   const [fechaTurno, setFechaTurno] = useState(() => new Date().toISOString().slice(0, 10));
   const [horaTurno, setHoraTurno] = useState('16:00');
-  const [estadoAsistencia, setEstadoAsistencia] = useState<'Pendiente' | 'Atendida' | 'No se conectó' | 'Suspendida' | 'Reprogramar'>('Atendida');
   const [guardandoSesion, setGuardandoSesion] = useState(false);
   const [sesionExito, setSesionExito] = useState(false);
 
-  // NUEVOS ESTADOS PARA MODAL DE MOTIVO
-  const [modalMotivoAbierto, setModalMotivoAbierto] = useState(false);
-  const [motivoSesion, setMotivoSesion] = useState('');
+  // ESTADOS PARA EL MODAL DE GESTIÓN DE TURNOS YA AGENDADOS
+  const [modalGestionAbierto, setModalGestionAbierto] = useState(false);
+  const [sesionAGestionar, setSesionAGestionar] = useState<Sesion | null>(null);
+  const [nuevoEstadoAsistencia, setNuevoEstadoAsistencia] = useState<'Atendida' | 'No se conectó' | 'Suspendida' | 'Reprogramar'>('Atendida');
+  const [motivoGestion, setMotivoGestion] = useState('');
   const [nuevaFechaReprogramacion, setNuevaFechaReprogramacion] = useState(() => new Date().toISOString().slice(0, 10));
   const [nuevaHoraReprogramacion, setNuevaHoraReprogramacion] = useState('16:00');
-  const [sesionTemporalGuardar, setSesionTemporalGuardar] = useState<any>(null);
+  const [guardandoGestion, setGuardandoGestion] = useState(false);
 
+  // Validación de permisos dueña
   const esSandra = user?.email?.toLowerCase().includes('sandra') || user?.email === 'sandell661@gmail.com';
 
   const cargarDatos = async () => {
@@ -142,10 +148,11 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
     ? 'Lic. Sandra' 
     : user?.email;
 
-  // Lógica principal de guardado de sesión
-  const procesarGuardadoSesion = async (estadoFinal: string, motivoOpcional: string = '') => {
+  // 1. Lógica para Agendar Turno (Solo crea el turno en "Pendiente")
+  const handleSubmitAgendar = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!pacienteSeleccionadoId) return;
-    
+
     setGuardandoSesion(true);
     try {
       const pac = misPacientes.find(p => p.id === pacienteSeleccionadoId);
@@ -163,59 +170,86 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
         modalidad: 'Virtual',
         importe: 0,
         estadoPago: 'Pendiente',
-        estadoAsistencia: estadoFinal
+        estadoAsistencia: 'Pendiente' // Siempre entra como pendiente
       };
 
       await guardarSesion(sesionPayload);
-
-      // Si hay un motivo de ausencia, suspensión o reprogramación, dejar nota en el paciente
-      if (motivoOpcional.trim() !== '') {
-         let textoNota = '';
-         if (estadoFinal === 'Reprogramar') {
-             textoNota = `El profesional reprogramó el turno para el ${nuevaFechaReprogramacion} a las ${nuevaHoraReprogramacion} hs. Motivo: ${motivoOpcional}`;
-             // También podríamos crear la nueva sesión automáticamente aquí si se desea
-         } else {
-             textoNota = `Sesión registrada como ${estadoFinal}. Motivo del profesional: ${motivoOpcional}`;
-         }
-         await agregarNotaAlHilo(pacienteSeleccionadoId, textoNota);
-      }
 
       setSesionExito(true);
       setTimeout(() => setSesionExito(false), 3000);
 
       await cargarDatos();
-      setModalMotivoAbierto(false);
-      setMotivoSesion('');
     } catch (error) {
-      console.error('Error al guardar sesión virtual:', error);
-      alert('No se pudo registrar la sesión.');
+      console.error('Error al agendar sesión:', error);
+      alert('No se pudo agendar el turno.');
     } finally {
       setGuardandoSesion(false);
     }
   };
 
-  // Manejador del submit del formulario
-  const handleSubmitSesion = (e: React.FormEvent) => {
-    e.preventDefault();
+  // 2. Abrir Modal de Gestión desde la Agenda
+  const abrirModalGestion = (sesion: Sesion) => {
+    setSesionAGestionar(sesion);
+    setNuevoEstadoAsistencia('Atendida');
+    setMotivoGestion('');
+    setNuevaFechaReprogramacion(sesion.fecha);
+    setNuevaHoraReprogramacion(sesion.hora);
+    setModalGestionAbierto(true);
+  };
+
+  // 3. Confirmar la Gestión (Atender, Cancelar, Reprogramar)
+  const handleConfirmarGestion = async () => {
+    if (!sesionAGestionar) return;
     
-    if (estadoAsistencia === 'No se conectó' || estadoAsistencia === 'Suspendida' || estadoAsistencia === 'Reprogramar') {
-      // Abrir modal de motivo antes de guardar
-      setSesionTemporalGuardar({ estadoAsistencia });
-      setModalMotivoAbierto(true);
-    } else {
-      // Guardar directo si fue Atendida
-      procesarGuardadoSesion(estadoAsistencia);
+    // Si no se atendió, obligar a poner motivo
+    if (nuevoEstadoAsistencia !== 'Atendida' && !motivoGestion.trim()) {
+      alert('Debes ingresar un motivo para informar a Recepción.');
+      return;
+    }
+
+    setGuardandoGestion(true);
+    try {
+      const datosActualizados: any = { estadoAsistencia: nuevoEstadoAsistencia };
+
+      let textoNota = '';
+
+      if (nuevoEstadoAsistencia === 'Reprogramar') {
+        datosActualizados.fecha = nuevaFechaReprogramacion;
+        datosActualizados.hora = nuevaHoraReprogramacion;
+        datosActualizados.estadoAsistencia = 'Pendiente'; // Vuelve a quedar pendiente en la nueva fecha
+        
+        textoNota = `El profesional reprogramó el turno del ${sesionAGestionar.fecha} para el ${nuevaFechaReprogramacion} a las ${nuevaHoraReprogramacion} hs. Motivo: ${motivoGestion}`;
+      } else {
+        textoNota = `Sesión del ${sesionAGestionar.fecha} marcada como ${nuevoEstadoAsistencia}. ${motivoGestion ? `Detalle: ${motivoGestion}` : ''}`;
+      }
+
+      await rectificarSesion(sesionAGestionar.id, datosActualizados);
+      await agregarNotaAlHilo(sesionAGestionar.pacienteId, textoNota.trim());
+
+      setModalGestionAbierto(false);
+      setSesionAGestionar(null);
+      await cargarDatos();
+    } catch (error) {
+      console.error('Error al gestionar turno:', error);
+      alert('Ocurrió un error al actualizar el estado.');
+    } finally {
+      setGuardandoGestion(false);
     }
   };
 
-  const handleConfirmarMotivo = () => {
-    if (!motivoSesion.trim()) {
-        alert('Debes ingresar un motivo para informar a Recepción.');
-        return;
-    }
-    procesarGuardadoSesion(sesionTemporalGuardar.estadoAsistencia, motivoSesion);
-  };
+  // 4. Borrar Sesión (EXCLUSIVO SANDRA)
+  const handleBorrarSesion = async (sesionId: string, nombrePaciente: string) => {
+    if (!esSandra) return; // Doble validación de seguridad
+    if (!window.confirm(`¿Estás segura de eliminar permanentemente el turno de ${nombrePaciente} de la agenda?`)) return;
 
+    try {
+      await deleteDoc(doc(db, 'sesiones', sesionId));
+      await cargarDatos();
+    } catch (e) {
+      console.error('Error eliminando sesión:', e);
+      alert('Error al intentar borrar la sesión.');
+    }
+  };
 
   const porcHon = 60;
 
@@ -294,7 +328,6 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
         <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between py-2.5 sm:py-0 sm:h-16 gap-3">
             
-            {/* Identidad + Botón Salir en Móvil */}
             <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 sm:w-9 sm:h-9 bg-[#223D30] text-white rounded-xl flex items-center justify-center font-bold text-base sm:text-lg select-none shadow-2xs">
@@ -310,7 +343,6 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                 </div>
               </div>
 
-              {/* Botonera Móvil: Admin (si corresponde) y Salir siempre visible */}
               <div className="flex items-center gap-1.5 sm:hidden">
                 {onVolverAdmin && (
                   <button
@@ -335,7 +367,6 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
               </div>
             </div>
 
-            {/* Pestañas de Navegación */}
             <nav className="flex items-center justify-between sm:justify-center gap-1 bg-[#EFECE6] p-1 rounded-2xl border border-[#E2DDD3] w-full sm:w-auto overflow-x-auto">
               <button
                 type="button"
@@ -377,7 +408,6 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
               </button>
             </nav>
 
-            {/* Botonera de Escritorio */}
             <div className="hidden sm:flex items-center gap-3 border-l border-[#E2DDD3] pl-4">
               {onVolverAdmin && (
                 <button
@@ -554,26 +584,26 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
             {/* GRID DE 2 COLUMNAS: FORMULARIO + AGENDA */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
               
-              {/* COLUMNA 1: FORMULARIO DE CONFIRMACIÓN */}
+              {/* COLUMNA 1: FORMULARIO SÓLO PARA AGENDAR NUEVO TURNO */}
               <div className="lg:col-span-5 bg-white border border-[#E8E3DA] rounded-3xl p-5 sm:p-6 shadow-xs">
                 <div className="flex items-center gap-3 pb-4 mb-4 border-b border-[#F0EBE3]">
                   <div className="w-9 h-9 rounded-2xl bg-[#223D30] text-white flex items-center justify-center shrink-0">
-                    <Video className="w-4 h-4 text-emerald-300" />
+                    <CalendarClock className="w-4 h-4 text-emerald-300" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-[#1E2923]">Agendar / Asentar Turno</h3>
-                    <p className="text-[11px] text-[#6F7D74]">Confirma la agenda o asienta la consulta</p>
+                    <h3 className="text-sm font-bold text-[#1E2923]">Agendar Turno en Agenda</h3>
+                    <p className="text-[11px] text-[#6F7D74]">Incorpora al paciente en el día seleccionado</p>
                   </div>
                 </div>
 
                 {sesionExito && (
                   <div className="mb-4 p-3 bg-[#EAF5EF] border border-[#BCE1CC] text-[#1E5C38] rounded-2xl text-xs font-semibold flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 shrink-0 text-[#2E8B57]" />
-                    <span>¡Turno procesado e informado con éxito!</span>
+                    <span>¡Turno agendado con éxito!</span>
                   </div>
                 )}
 
-                <form onSubmit={handleSubmitSesion} className="space-y-3.5">
+                <form onSubmit={handleSubmitAgendar} className="space-y-3.5">
                   <div>
                     <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
                       Paciente Citado
@@ -581,7 +611,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                     {misPacientes.length === 0 ? (
                       <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
                         {esSandra 
-                          ? 'Para agendarte sesiones, derivate un paciente desde Admisión a "Lic. Sandra".' 
+                          ? 'No tienes pacientes derivados. Créalo en Admisión primero.' 
                           : 'Aún no tenés pacientes derivados por recepción.'}
                       </p>
                     ) : (
@@ -628,28 +658,9 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
-                      Estado de la Consulta
-                    </label>
-                    <select
-                      value={estadoAsistencia}
-                      onChange={(e) => setEstadoAsistencia(e.target.value as any)}
-                      className="w-full px-3 py-2.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-bold text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] cursor-pointer"
-                    >
-                      <option value="Pendiente">⏳ Agendar Turno (Pendiente)</option>
-                      <option value="Atendida">🟢 Atendida (Sesión realizada)</option>
-                      <option value="No se conectó">🔴 No se conectó / Ausente</option>
-                      <option value="Suspendida">⚪ Sesión suspendida / Cancelada</option>
-                      <option value="Reprogramar">🔄 Reprogramar (Solicitar cambio)</option>
-                    </select>
-                  </div>
-
-                  <div className="p-3 bg-[#FAF8F5] rounded-xl border border-[#DDD6CC] text-[11px] text-[#6F7D74] space-y-1">
-                    <span className="font-bold text-[#1E2923] block">Modalidad: Online / Virtual</span>
-                    <p>
-                      Los cobros y aranceles son administrados directamente en recepción central.
-                    </p>
+                  <div className="p-3 bg-sky-50 rounded-xl border border-sky-200 text-[11px] text-sky-800 space-y-1">
+                    <span className="font-bold block">Paso 1: Agendar</span>
+                    <p>Al confirmar, el turno se creará como <strong className="font-bold">Pendiente</strong> en la agenda de la derecha. Desde allí podrás gestionar si asistió o faltó.</p>
                   </div>
 
                   <button
@@ -657,7 +668,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                     disabled={guardandoSesion || misPacientes.length === 0}
                     className="w-full mt-2 py-3 bg-[#223D30] hover:bg-[#182C22] text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50"
                   >
-                    {guardandoSesion ? 'Guardando...' : estadoAsistencia === 'Pendiente' ? 'Confirmar y Agendar' : 'Asentar en Historial'}
+                    {guardandoSesion ? 'Agendando...' : 'Confirmar y Agendar'}
                   </button>
                 </form>
               </div>
@@ -684,22 +695,27 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                   ) : (
                     sesionesDelDiaSeleccionado.map((sesion) => {
                       const asistencia = (sesion as any).estadoAsistencia || 'Atendida';
+                      // Lógica de cobro: Solo muestra pendiente de cobro si se atendió
+                      const requiereCobro = asistencia === 'Atendida';
 
                       return (
                         <div
                           key={sesion.id}
-                          className="p-4 bg-[#FAF8F5] hover:bg-white border border-[#DDD6CC] rounded-2xl transition-all shadow-2xs space-y-2"
+                          className="p-4 bg-[#FAF8F5] hover:bg-white border border-[#DDD6CC] rounded-2xl transition-all shadow-2xs space-y-2.5"
                         >
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-bold text-[#1E2923]">{sesion.pacienteNombre}</span>
-                            <span className="text-xs font-mono font-bold bg-white px-2.5 py-1 rounded-lg border border-[#DDD6CC] text-[#A8532F] flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {sesion.hora} hs
-                            </span>
+                            <div className="flex gap-2 items-center">
+                              <span className="text-xs font-mono font-bold bg-white px-2.5 py-1 rounded-lg border border-[#DDD6CC] text-[#A8532F] flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {sesion.hora} hs
+                              </span>
+                            </div>
                           </div>
 
-                          <div className="flex items-center justify-between text-xs text-[#6F7D74] pt-1">
+                          <div className="flex items-center justify-between text-xs pt-1">
                             <div className="flex items-center gap-2 flex-wrap">
+                              {/* ETIQUETAS DE ESTADO */}
                               {asistencia === 'Pendiente' && (
                                 <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
                                   <Clock className="w-3 h-3 text-amber-600" />
@@ -731,15 +747,48 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                                 </span>
                               )}
 
-                              <span className="flex items-center gap-1 text-[11px]">
+                              <span className="flex items-center gap-1 text-[11px] text-[#6F7D74]">
                                 <Video className="w-3.5 h-3.5 text-[#223D30]" />
                                 {sesion.modalidad}
                               </span>
                             </div>
+                            
+                            {/* ESTADO DE COBRO / BOTONERA GESTIÓN */}
+                            <div className="flex items-center gap-3">
+                              {/* Texto Cobro (Oculto si no fue atendida) */}
+                              {!requiereCobro ? (
+                                <span className="text-[10px] text-zinc-400 font-semibold italic">Cobro al atender</span>
+                              ) : (
+                                <span className={`font-semibold ${sesion.estadoPago === 'Cobrado' ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                  {sesion.estadoPago === 'Cobrado' ? '✓ Cobrado CIAP' : 'Pendiente cobro'}
+                                </span>
+                              )}
+                              
+                              {/* Botones de acción del turno */}
+                              <div className="flex items-center gap-1.5 border-l border-[#DDD6CC] pl-3 ml-1">
+                                <button
+                                  type="button"
+                                  onClick={() => abrirModalGestion(sesion)}
+                                  className="flex items-center gap-1 px-2.5 py-1 bg-white border border-[#DDD6CC] hover:bg-[#EFECE6] text-[#223D30] rounded-xl font-bold transition-all shadow-2xs"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  <span>Gestionar</span>
+                                </button>
 
-                            <span className={`font-semibold ${sesion.estadoPago === 'Cobrado' ? 'text-emerald-700' : 'text-amber-700'}`}>
-                              {sesion.estadoPago === 'Cobrado' ? '✓ Cobrado CIAP' : 'Pendiente cobro'}
-                            </span>
+                                {/* Papelera solo para Sandra */}
+                                {esSandra && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBorrarSesion(sesion.id, sesion.pacienteNombre)}
+                                    title="Borrar turno (Exclusivo Dirección)"
+                                    className="p-1.5 rounded-xl hover:bg-red-50 text-zinc-400 hover:text-red-600 transition-colors"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
                           </div>
                         </div>
                       );
@@ -1019,27 +1068,25 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
 
       </main>
 
-      {/* MODAL DE MOTIVO DE AUSENCIA / CANCELACIÓN / REPROGRAMACIÓN */}
-      {modalMotivoAbierto && sesionTemporalGuardar && (
+      {/* MODAL DE GESTIÓN DE TURNO (ATENDER, AUSENCIA, CANCELACIÓN, REPROGRAMACIÓN) */}
+      {modalGestionAbierto && sesionAGestionar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white border border-[#E8E3DA] rounded-3xl p-6 sm:p-7 max-w-sm w-full shadow-xl space-y-4">
             
             <div className="flex items-center justify-between pb-3 border-b border-[#F0EBE3]">
               <div className="flex items-center gap-2.5">
                 <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-                   sesionTemporalGuardar.estadoAsistencia === 'Reprogramar' ? 'bg-sky-50 text-sky-600' : 'bg-rose-50 text-rose-600'
+                   nuevoEstadoAsistencia === 'Reprogramar' ? 'bg-sky-50 text-sky-600' : 'bg-emerald-50 text-[#1E5C38]'
                 }`}>
-                  {sesionTemporalGuardar.estadoAsistencia === 'Reprogramar' ? <CalendarClock className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                  {nuevoEstadoAsistencia === 'Reprogramar' ? <CalendarClock className="w-4 h-4" /> : <Edit3 className="w-4 h-4" />}
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-[#1E2923]">
-                    {sesionTemporalGuardar.estadoAsistencia === 'Reprogramar' ? 'Reprogramar Turno' : 'Informar Novedad'}
-                  </h3>
-                  <p className="text-[11px] text-[#6F7D74]">Recepción verá este motivo</p>
+                  <h3 className="text-sm font-bold text-[#1E2923]">Gestionar Turno</h3>
+                  <p className="text-[11px] text-[#6F7D74]">Informa si se atendió o hubo novedad</p>
                 </div>
               </div>
               <button 
-                onClick={() => setModalMotivoAbierto(false)}
+                onClick={() => setModalGestionAbierto(false)}
                 className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-[#F7F5F0] cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1047,26 +1094,42 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
             </div>
 
             <div className="space-y-4 text-xs">
-              <p className="text-[#4A554E] leading-relaxed">
-                Estás marcando la sesión como <strong className="text-[#1E2923]">{sesionTemporalGuardar.estadoAsistencia}</strong>. 
-                Por favor, ingresá el motivo para que Admisión esté al tanto (ej: "Se le cortó la luz", "Tuve un inconveniente personal").
-              </p>
+              <div className="flex items-center justify-between bg-[#FAF8F5] p-3 rounded-xl border border-[#DDD6CC]">
+                 <span className="font-bold text-[#1E2923]">{sesionAGestionar.pacienteNombre}</span>
+                 <span className="font-mono text-[#A8532F] font-bold">{sesionAGestionar.fecha} {sesionAGestionar.hora}</span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
+                  Resultado de la Cita
+                </label>
+                <select
+                  value={nuevoEstadoAsistencia}
+                  onChange={(e) => setNuevoEstadoAsistencia(e.target.value as any)}
+                  className="w-full px-3 py-2.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-bold text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] cursor-pointer"
+                >
+                  <option value="Atendida">🟢 Se Atendió Correctamente</option>
+                  <option value="No se conectó">🔴 No se conectó / Ausente</option>
+                  <option value="Suspendida">⚪ Suspendió la sesión</option>
+                  <option value="Reprogramar">🔄 Reprogramar Turno</option>
+                </select>
+              </div>
 
               <div>
                 <label className="block text-[11px] font-bold text-[#1E2923] mb-1.5">
-                  Motivo o detalle (Requerido)
+                  {nuevoEstadoAsistencia === 'Atendida' ? 'Nota (Opcional)' : 'Motivo o detalle (Requerido)'}
                 </label>
                 <textarea
-                  value={motivoSesion}
-                  onChange={(e) => setMotivoSesion(e.target.value)}
-                  placeholder="Detalle breve..."
+                  value={motivoGestion}
+                  onChange={(e) => setMotivoGestion(e.target.value)}
+                  placeholder={nuevoEstadoAsistencia === 'Atendida' ? "Ej: Todo normal..." : "Detalle breve para Recepción..."}
                   rows={3}
                   className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] resize-none"
                 />
               </div>
 
                {/* Si es reprogramar, pedimos nueva fecha y hora */}
-               {sesionTemporalGuardar.estadoAsistencia === 'Reprogramar' && (
+               {nuevoEstadoAsistencia === 'Reprogramar' && (
                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[#F0EBE3]">
                     <div>
                       <label className="block text-[10px] font-bold uppercase text-[#3C4A42] mb-1">
@@ -1098,18 +1161,18 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setModalMotivoAbierto(false)}
+                  onClick={() => setModalGestionAbierto(false)}
                   className="px-3 py-2 text-[#4A554E] hover:text-[#1E2923] font-semibold cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
-                  onClick={handleConfirmarMotivo}
-                  disabled={guardandoSesion || !motivoSesion.trim()}
+                  onClick={handleConfirmarGestion}
+                  disabled={guardandoGestion}
                   className="px-4 py-2 bg-[#223D30] hover:bg-[#182C22] text-white rounded-xl font-bold transition-all disabled:opacity-40 cursor-pointer shadow-xs"
                 >
-                  {guardandoSesion ? 'Guardando...' : 'Confirmar e Informar'}
+                  {guardandoGestion ? 'Guardando...' : 'Confirmar Gestión'}
                 </button>
               </div>
             </div>
