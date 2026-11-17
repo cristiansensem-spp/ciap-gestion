@@ -25,7 +25,9 @@ import {
   RefreshCw, 
   UserCheck,
   AlertCircle,
-  UserMinus 
+  UserMinus,
+  Pencil, // NUEVO: Ícono para editar
+  X // NUEVO: Ícono para cancelar edición
 } from 'lucide-react';
 
 export default function AdmisionModulo() {
@@ -36,11 +38,14 @@ export default function AdmisionModulo() {
   const [cargando, setCargando] = useState(false);
   const [guardadoExito, setGuardadoExito] = useState(false);
 
-  // Formulario Nuevo Paciente
+  // NUEVO ESTADO PARA MODO EDICIÓN
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+
+  // Formulario Paciente
   const [nombre, setNombre] = useState('');
   const [apellido, setApellido] = useState('');
   const [dni, setDni] = useState('');
-  const [edad, setEdad] = useState(''); // NUEVO: Estado para la edad
+  const [edad, setEdad] = useState(''); 
   const [telefono, setTelefono] = useState('');
   const [modalidad, setModalidad] = useState<Modalidad | 'Presencial y Virtual'>('Presencial');
   const [diasAtencion, setDiasAtencion] = useState('');
@@ -77,6 +82,39 @@ export default function AdmisionModulo() {
     cargarDatos();
   }, []);
 
+  // NUEVO: Funciones para iniciar y cancelar edición
+  const handleIniciarEdicion = (paciente: Paciente) => {
+    const pData = paciente as any;
+    setEditandoId(paciente.id);
+    setNombre(paciente.nombre);
+    setApellido(paciente.apellido);
+    setDni(paciente.dni || '');
+    setEdad(pData.edad || '');
+    setTelefono(paciente.telefono || '');
+    setModalidad(paciente.modalidad || 'Presencial');
+    setDiasAtencion(paciente.diasAtencion || '');
+    setEspecialidad(pData.especialidad || 'Terapia para adultos');
+    setProfesionalId(paciente.profesionalId || '');
+    setMotivoConsulta(paciente.motivoConsulta || '');
+    setNotaInicial(''); // La nota inicial la dejamos vacía por si quieren sumar una nota extra al editar
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelarEdicion = () => {
+    setEditandoId(null);
+    setNombre('');
+    setApellido('');
+    setDni('');
+    setEdad('');
+    setTelefono('');
+    setModalidad('Presencial');
+    setDiasAtencion('');
+    setEspecialidad('Terapia para adultos');
+    setProfesionalId('');
+    setMotivoConsulta('');
+    setNotaInicial('');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nombre.trim() || !apellido.trim() || !telefono.trim()) return;
@@ -85,40 +123,45 @@ export default function AdmisionModulo() {
     try {
       const profElegido = profesionales.find(p => p.id === profesionalId);
       
-      const nuevoPaciente = {
+      const payloadPaciente = {
         nombre: nombre.trim(),
         apellido: apellido.trim(),
         dni: dni.trim() || 'S/DNI',
-        edad: edad.trim() || 'S/E', // <-- Guardamos la edad (S/E = Sin Especificar)
+        edad: edad.trim() || 'S/E',
         telefono: telefono.trim(),
         modalidad: modalidad as any,
         diasAtencion: diasAtencion.trim() || 'A coordinar',
-        especialidad: especialidad, 
-        profesionalId: profesionalId || '', 
-        profesionalNombre: profElegido ? profElegido.nombre : 'Sin asignar', 
-        estado: 'En Admisión',
+        especialidad: especialidad,
+        profesionalId: profesionalId || '',
+        profesionalNombre: profElegido ? profElegido.nombre : 'Sin asignar',
         motivoConsulta: motivoConsulta.trim() || 'Consulta inicial'
       };
 
-      await guardarPaciente(nuevoPaciente, notaInicial.trim() ? notaInicial.trim() : undefined);
+      if (editandoId) {
+        // MODO EDICIÓN
+        await actualizarPaciente(editandoId, payloadPaciente);
+        if (notaInicial.trim() !== '') {
+          // Si escribieron algo en nota al editar, lo sumamos al hilo
+          await agregarNotaAlHilo(editandoId, notaInicial.trim());
+        }
+        handleCancelarEdicion(); // Volvemos a modo Nuevo Paciente
+      } else {
+        // MODO NUEVO PACIENTE
+        const nuevoPaciente = {
+          ...payloadPaciente,
+          estado: 'En Admisión',
+        };
+        await guardarPaciente(nuevoPaciente, notaInicial.trim() ? notaInicial.trim() : undefined);
+        handleCancelarEdicion(); // Limpiamos campos
+      }
 
-      setNombre('');
-      setApellido('');
-      setDni('');
-      setEdad(''); // <-- Limpiamos el campo de edad
-      setTelefono('');
-      setDiasAtencion('');
-      setEspecialidad('Terapia para adultos');
-      setProfesionalId(''); 
-      setMotivoConsulta('');
-      setNotaInicial('');
       setGuardadoExito(true);
       setTimeout(() => setGuardadoExito(false), 3000);
 
       await cargarDatos();
     } catch (error) {
       console.error('Error guardando paciente:', error);
-      alert('Error al registrar el paciente.');
+      alert('Error al procesar el paciente.');
     } finally {
       setCargando(false);
     }
@@ -265,21 +308,43 @@ export default function AdmisionModulo() {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
         
         {/* Formulario */}
-        <div className="xl:col-span-5 bg-white border border-[#E8E3DA] rounded-3xl p-6 shadow-xs xl:sticky xl:top-24">
-          <div className="flex items-center gap-3 pb-4 mb-5 border-b border-[#F0EBE3]">
-            <div className="w-9 h-9 rounded-2xl bg-[#A8532F] text-white flex items-center justify-center shrink-0 shadow-xs">
-              <UserPlus className="w-4 h-4" />
+        <div className={`xl:col-span-5 bg-white border rounded-3xl p-6 shadow-xs xl:sticky xl:top-24 transition-all ${
+          editandoId ? 'border-[#223D30] ring-2 ring-[#223D30]/20' : 'border-[#E8E3DA]'
+        }`}>
+          <div className="flex items-center justify-between pb-4 mb-5 border-b border-[#F0EBE3]">
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-2xl text-white flex items-center justify-center shrink-0 shadow-xs ${
+                editandoId ? 'bg-[#223D30]' : 'bg-[#A8532F]'
+              }`}>
+                {editandoId ? <Pencil className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#1E2923]">
+                  {editandoId ? 'Editar Datos del Paciente' : 'Nuevo Paciente'}
+                </h3>
+                <p className="text-[11px] text-[#6F7D74]">
+                  {editandoId ? 'Modificando ficha clínica' : 'Fecha y hora se registrarán automáticamente'}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-[#1E2923]">Nuevo Paciente</h3>
-              <p className="text-[11px] text-[#6F7D74]">Fecha y hora se registrarán automáticamente</p>
-            </div>
+
+            {/* BOTÓN CANCELAR EDICIÓN */}
+            {editandoId && (
+              <button
+                type="button"
+                onClick={handleCancelarEdicion}
+                className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 hover:text-zinc-800 bg-[#FAF8F5] border border-[#DDD6CC] px-2.5 py-1 rounded-xl cursor-pointer transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Cancelar</span>
+              </button>
+            )}
           </div>
 
           {guardadoExito && (
             <div className="mb-4 p-3 bg-[#EAF5EF] border border-[#BCE1CC] text-[#1E5C38] rounded-2xl text-xs font-semibold flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0 text-[#2E8B57]" />
-              <span>¡Paciente derivado e ingresado al sistema!</span>
+              <span>{editandoId ? '¡Datos actualizados con éxito!' : '¡Paciente derivado e ingresado al sistema!'}</span>
             </div>
           )}
 
@@ -442,7 +507,7 @@ export default function AdmisionModulo() {
 
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
-                Primera Nota de Recepción / Llamado (Opcional)
+                {editandoId ? 'Agregar Nota al Historial (Opcional)' : 'Primera Nota de Recepción / Llamado (Opcional)'}
               </label>
               <input
                 type="text"
@@ -456,9 +521,11 @@ export default function AdmisionModulo() {
             <button
               type="submit"
               disabled={cargando}
-              className="w-full mt-2 py-3 bg-[#A8532F] hover:bg-[#914524] text-white rounded-xl text-xs font-bold tracking-wide transition-all shadow-md hover:shadow-lg disabled:opacity-50 cursor-pointer"
+              className={`w-full mt-2 py-3 text-white rounded-xl text-xs font-bold tracking-wide transition-all shadow-md hover:shadow-lg disabled:opacity-50 cursor-pointer ${
+                editandoId ? 'bg-[#223D30] hover:bg-[#182C22]' : 'bg-[#A8532F] hover:bg-[#914524]'
+              }`}
             >
-              {cargando ? 'Registrando paciente...' : 'Registrar y Derivar Paciente'}
+              {cargando ? 'Procesando...' : editandoId ? 'Guardar Cambios' : 'Registrar y Derivar Paciente'}
             </button>
           </form>
         </div>
@@ -571,11 +638,15 @@ export default function AdmisionModulo() {
                 const pData = paciente as any;
                 const sinAsignar = paciente.profesionalNombre === 'Sin asignar';
                 const esBaja = pData.estado === 'De Baja';
-                const especialidadPaciente = pData.especialidad;
-                const edadPaciente = pData.edad; // <-- Usamos el valor
+                const especialidadPaciente = pData.especialidad; 
+                const edadPaciente = pData.edad; 
+
+                const estaEditandoEste = editandoId === paciente.id;
 
                 let cardStyle = 'border-[#EFECE6] bg-[#FCFBF9] hover:bg-white hover:border-[#DDD6CC]';
-                if (esBaja) {
+                if (estaEditandoEste) {
+                  cardStyle = 'border-[#223D30] bg-emerald-50/30 ring-1 ring-[#223D30]';
+                } else if (esBaja) {
                   cardStyle = 'border-zinc-300 bg-zinc-50 opacity-90 hover:opacity-100 hover:bg-zinc-100';
                 } else if (sinAsignar) {
                   cardStyle = 'border-amber-300 bg-amber-50 hover:bg-amber-100/50';
@@ -629,7 +700,6 @@ export default function AdmisionModulo() {
                           <span>DNI: {paciente.dni}</span>
                           <span>•</span>
                           
-                          {/* MOSTRAMOS LA EDAD EN LA TARJETA */}
                           {edadPaciente && (
                             <>
                               <span className="font-semibold">{edadPaciente} años</span>
@@ -654,6 +724,22 @@ export default function AdmisionModulo() {
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
+                        {/* NUEVO: Botón Editar Paciente (Oculto si está de baja) */}
+                        {!esBaja && (
+                          <button
+                            type="button"
+                            onClick={() => handleIniciarEdicion(paciente)}
+                            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                              estaEditandoEste
+                                ? 'bg-[#223D30] text-white'
+                                : 'hover:bg-[#EFECE6] text-zinc-400 hover:text-[#223D30]'
+                            }`}
+                            title="Editar ficha del paciente"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        )}
+
                         {!esBaja && (
                           <button
                             type="button"
