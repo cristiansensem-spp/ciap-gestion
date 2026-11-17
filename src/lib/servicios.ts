@@ -120,7 +120,7 @@ export const eliminarProfesional = async (id: string) => {
 
 // --- SERVICIOS DE PACIENTES ---
 export const guardarPaciente = async (
-  paciente: Omit<Paciente, 'id' | 'fechaCreacion' | 'fechaRegistroFormateada' | 'historialNotas'>,
+  paciente: Omit<Paciente, 'id' | 'fechaCreacion' | 'fechaRegistroFormateada' | 'historialNotas'> | any,
   notaInicial?: string
 ) => {
   const timestampHumano = obtenerFechaHoraActual();
@@ -172,7 +172,7 @@ export const agregarNotaAlHilo = async (pacienteId: string, textoNota: string) =
   return nuevaNota;
 };
 
-export const actualizarPaciente = async (id: string, datos: Partial<Paciente>) => {
+export const actualizarPaciente = async (id: string, datos: Partial<Paciente> | any) => {
   const docRef = doc(db, 'pacientes', id);
   await updateDoc(docRef, datos);
 };
@@ -199,7 +199,7 @@ export const reasignarProfesionalPaciente = async (
 
 // --- SERVICIOS DE SESIONES Y CAJA ---
 export const guardarSesion = async (
-  sesion: Omit<Sesion, 'id' | 'fechaRegistro' | 'fechaIso'>
+  sesion: Omit<Sesion, 'id' | 'fechaRegistro' | 'fechaIso'> | any
 ) => {
   const timestampHumano = obtenerFechaHoraActual();
   
@@ -255,7 +255,7 @@ export const cobrarSesion = async (
   });
 };
 
-export const rectificarSesion = async (sesionId: string, datos: Partial<Sesion>) => {
+export const rectificarSesion = async (sesionId: string, datos: Partial<Sesion> | any) => {
   const docRef = doc(db, 'sesiones', sesionId);
   await updateDoc(docRef, datos);
 };
@@ -297,7 +297,7 @@ export const liquidarSesionesProfesional = async (
 
 // --- SERVICIOS DE GASTOS ---
 export const guardarGasto = async (
-  gasto: Omit<Gasto, 'id' | 'fechaRegistro' | 'fechaIso'>
+  gasto: Omit<Gasto, 'id' | 'fechaRegistro' | 'fechaIso'> | any
 ) => {
   const timestampHumano = obtenerFechaHoraActual();
   const docRef = await addDoc(collection(db, 'gastos'), {
@@ -317,7 +317,7 @@ export const obtenerGastos = async (): Promise<Gasto[]> => {
   } as Gasto));
 };
 
-export const actualizarGasto = async (id: string, datos: Partial<Gasto>) => {
+export const actualizarGasto = async (id: string, datos: Partial<Gasto> | any) => {
   const docRef = doc(db, 'gastos', id);
   await updateDoc(docRef, datos);
 };
@@ -380,7 +380,7 @@ export interface MovimientoDireccion {
 }
 
 export const guardarMovimientoDireccion = async (
-  movimiento: Omit<MovimientoDireccion, 'id' | 'fechaRegistro'>
+  movimiento: Omit<MovimientoDireccion, 'id' | 'fechaRegistro'> | any
 ) => {
   const timestampHumano = obtenerFechaHoraActual();
   const docRef = await addDoc(collection(db, 'privado_direccion'), {

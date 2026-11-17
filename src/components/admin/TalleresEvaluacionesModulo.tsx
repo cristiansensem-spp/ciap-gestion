@@ -50,6 +50,7 @@ interface EvaluacionClinica {
   profesionalId: string;
   profesionalNombre: string;
   fechaInicio: string;
+  horaInicio: string; // <-- NUEVO CAMPO: Hora de la Cita
   fechaEntregaEstimada: string;
   importeTotal: number;
   cuota1: {
@@ -120,6 +121,7 @@ export default function TalleresEvaluacionesModulo() {
         profesionalId: 'prof-castro',
         profesionalNombre: 'Lic. Nicolás Castro',
         fechaInicio: '2026-10-15',
+        horaInicio: '15:00', // <-- Valor por defecto para la evaluación de prueba
         fechaEntregaEstimada: '2026-11-15',
         importeTotal: 80000,
         cuota1: {
@@ -144,6 +146,7 @@ export default function TalleresEvaluacionesModulo() {
   const [tipoEval, setTipoEval] = useState<'Psicodiagnóstico Clínico' | 'Evaluación Neurocognitiva' | 'Evaluación Coeficiente Intelectual (CI)'>('Evaluación Neurocognitiva');
   const [profesionalEvalId, setProfesionalEvalId] = useState('');
   const [fechaInicioEval, setFechaInicioEval] = useState(() => new Date().toISOString().slice(0, 10));
+  const [horaInicioEval, setHoraInicioEval] = useState('09:00'); // <-- ESTADO: Hora de Inicio
   const [importeTotalEval, setImporteTotalEval] = useState('70000');
   const [cuota1Cobrada, setCuota1Cobrada] = useState(true);
   const [cuentaCuota1, setCuentaCuota1] = useState<CuentaDestino>('Santander');
@@ -311,6 +314,7 @@ export default function TalleresEvaluacionesModulo() {
         profesionalId: profesionalEvalId,
         profesionalNombre: prof ? prof.nombre : 'Lic. Evaluador',
         fechaInicio: fechaInicioEval,
+        horaInicio: horaInicioEval, // <-- Agregar la hora seleccionada
         fechaEntregaEstimada: fechaFinIso,
         importeTotal: montoTotal,
         cuota1: {
@@ -332,11 +336,11 @@ export default function TalleresEvaluacionesModulo() {
       if (cuota1Cobrada) {
         await guardarSesion({
           pacienteId: `eval-${Date.now()}`,
-          pacienteNombre: `${nombreEval.trim()} (${tipoEval} - 50% Inicial)`,
+          pacienteNombre: `${nombreEval.trim()} (${tipoEval} 50% Inicial)`,
           profesionalId: profesionalEvalId,
           profesionalNombre: prof ? prof.nombre : 'Lic. Evaluador',
           fecha: fechaInicioEval,
-          hora: '10:00',
+          hora: horaInicioEval, // <-- Usar la hora seleccionada en lugar del valor fijo '10:00'
           modalidad: 'Presencial',
           importe: mitad,
           estadoPago: 'Cobrado',
@@ -351,6 +355,7 @@ export default function TalleresEvaluacionesModulo() {
       setNombreEval('');
       setDniEval('');
       setTelefonoEval('');
+      setHoraInicioEval('09:00'); // <-- Resetear la hora
       setComprobanteCuota1('');
       setExitoEval(true);
       setTimeout(() => setExitoEval(false), 3000);
@@ -369,7 +374,7 @@ export default function TalleresEvaluacionesModulo() {
     try {
       await guardarSesion({
         pacienteId: target.id,
-        pacienteNombre: `${target.pacienteNombre} (${target.tipoEvaluacion} - 50% Final)`,
+        pacienteNombre: `${target.pacienteNombre} (${target.tipoEvaluacion} 50% Final)`,
         profesionalId: target.profesionalId,
         profesionalNombre: target.profesionalNombre,
         fecha: new Date().toISOString().slice(0, 10),
@@ -872,20 +877,21 @@ export default function TalleresEvaluacionesModulo() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-[#3C4A42] mb-1">Profesional a Cargo</label>
-                  <select
-                    value={profesionalEvalId}
-                    onChange={(e) => setProfesionalEvalId(e.target.value)}
-                    className="w-full px-2.5 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium cursor-pointer"
-                  >
-                    {profesionales.map(p => (
-                      <option key={p.id} value={p.id}>{p.nombre}</option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-[11px] font-bold uppercase text-[#3C4A42] mb-1">Profesional a Cargo</label>
+                <select
+                  value={profesionalEvalId}
+                  onChange={(e) => setProfesionalEvalId(e.target.value)}
+                  className="w-full px-2.5 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium cursor-pointer"
+                >
+                  {profesionales.map(p => (
+                    <option key={p.id} value={p.id}>{p.nombre}</option>
+                  ))}
+                </select>
+              </div>
 
+              {/* SECCIÓN FECHA Y HORA */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-[#3C4A42] mb-1">Fecha de Inicio</label>
                   <input
@@ -894,6 +900,16 @@ export default function TalleresEvaluacionesModulo() {
                     value={fechaInicioEval}
                     onChange={(e) => setFechaInicioEval(e.target.value)}
                     className="w-full px-2.5 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-[#3C4A42] mb-1">Hora de la Cita</label>
+                  <input
+                    type="time"
+                    required
+                    value={horaInicioEval}
+                    onChange={(e) => setHoraInicioEval(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium font-mono"
                   />
                 </div>
               </div>
@@ -1023,7 +1039,10 @@ export default function TalleresEvaluacionesModulo() {
                           <div className="flex items-center gap-2 mt-1 text-xs text-[#6F7D74] font-mono flex-wrap">
                             <span>Evaluador: <strong className="text-[#1E2923] font-sans">{ev.profesionalNombre}</strong></span>
                             <span>•</span>
-                            <span>Inicio: {ev.fechaInicio}</span>
+                            <span className="flex items-center gap-1">
+                               Inicio: {ev.fechaInicio} 
+                               {ev.horaInicio && <span className="font-bold text-[#223D30]">({ev.horaInicio} hs)</span>}
+                            </span>
                             <span>•</span>
                             <span className="text-[#A8532F] font-semibold">Entrega: {ev.fechaEntregaEstimada}</span>
                           </div>

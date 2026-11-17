@@ -6,10 +6,12 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { 
   obtenerProfesionales, 
   registrarProfesionalConAcceso, 
-  eliminarProfesional 
+  eliminarProfesional,
+  obtenerPacientes // NUEVO: Para poder listar los pacientes
 } from '../../lib/servicios';
-import { Profesional } from '../../types';
+import { Profesional, Paciente } from '../../types'; // NUEVO: Importamos el tipo Paciente
 import { 
+  Users, // NUEVO: Ícono para ver pacientes
   UserPlus, 
   Trash2, 
   Search, 
@@ -36,6 +38,7 @@ import {
 
 export default function ProfesionalesModulo() {
   const [profesionales, setProfesionales] = useState<Profesional[]>([]);
+  const [pacientes, setPacientes] = useState<Paciente[]>([]); // NUEVO: Estado para pacientes
   const [busqueda, setBusqueda] = useState('');
   const [cargando, setCargando] = useState(false);
   const [eliminandoId, setEliminandoId] = useState<string | null>(null);
@@ -52,8 +55,9 @@ export default function ProfesionalesModulo() {
   } | null>(null);
   const [copiado, setCopiado] = useState(false);
 
-  // Modo cápsula
+  // Modo cápsula y visualización de pacientes
   const [tarjetasColapsadas, setTarjetasColapsadas] = useState<{ [id: string]: boolean }>({});
+  const [viendoPacientes, setViendoPacientes] = useState<{ [id: string]: boolean }>({}); // NUEVO: Control de vista de pacientes
   const [todasColapsadas, setTodasColapsadas] = useState(false);
 
   // Formulario nuevo o edición
@@ -67,10 +71,15 @@ export default function ProfesionalesModulo() {
 
   const cargarLista = async () => {
     try {
-      const data = await obtenerProfesionales();
-      setProfesionales(data);
+      // Cargamos ambas listas en paralelo sin afectar el rendimiento
+      const [dataProf, dataPac] = await Promise.all([
+        obtenerProfesionales(),
+        obtenerPacientes()
+      ]);
+      setProfesionales(dataProf);
+      setPacientes(dataPac);
     } catch (error) {
-      console.error('Error cargando profesionales:', error);
+      console.error('Error cargando profesionales y pacientes:', error);
     }
   };
 
@@ -186,6 +195,14 @@ export default function ProfesionalesModulo() {
 
   const toggleColapsarTarjeta = (id: string) => {
     setTarjetasColapsadas(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  // NUEVO: Función para alternar la vista de pacientes asignados
+  const toggleViendoPacientes = (id: string) => {
+    setViendoPacientes(prev => ({
       ...prev,
       [id]: !prev[id]
     }));
@@ -613,12 +630,16 @@ export default function ProfesionalesModulo() {
             ) : (
               profesionalesFiltrados.map((prof) => {
                 const estaColapsada = tarjetasColapsadas[prof.id] ?? false;
+                const estaViendoPac = viendoPacientes[prof.id] ?? false;
                 const estaEliminando = eliminandoId === prof.id;
                 const estaEditandoEste = editandoId === prof.id;
 
                 const mensajeRapidoWhatsApp = `*Centro CIAP - Acceso Profesional*\n\nHola ${prof.nombre}, tu usuario registrado en la plataforma es:\n👤 *Usuario:* ${prof.email || 'Consulta en recepción'}\n💼 *Esquema:* 60% honorarios (liquidación los viernes)\n🔗 *Portal:* ${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}`;
 
                 const esDobleTurno = prof.horarios && prof.horarios.includes(' y ');
+                
+                // Filtramos los pacientes asignados a este profesional
+                const misPacientes = pacientes.filter(p => p.profesionalId === prof.id);
 
                 return (
                   <div 
@@ -662,6 +683,26 @@ export default function ProfesionalesModulo() {
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
+                        {/* Botón Ver Pacientes Asignados */}
+                        <button
+                          type="button"
+                          onClick={() => toggleViendoPacientes(prof.id)}
+                          title={`Ver pacientes de ${prof.nombre}`}
+                          className={`p-1.5 rounded-xl transition-colors cursor-pointer relative ${
+                            estaViendoPac
+                              ? 'bg-[#223D30] text-white'
+                              : 'hover:bg-[#EFECE6] text-zinc-400 hover:text-[#223D30]'
+                          }`}
+                        >
+                          <Users className="w-4 h-4" />
+                          {/* Pequeño badge si tiene pacientes */}
+                          {misPacientes.length > 0 && !estaViendoPac && (
+                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#A8532F] text-white rounded-full text-[8px] font-bold flex items-center justify-center">
+                              {misPacientes.length}
+                            </span>
+                          )}
+                        </button>
+
                         {/* Botón Editar Días y Horarios */}
                         <button
                           type="button"
@@ -739,6 +780,45 @@ export default function ProfesionalesModulo() {
                         <span className="text-[10px] text-[#223D30] font-semibold bg-[#EAF5EF] px-2 py-0.5 rounded-md">
                           Retención CIAP: 40%
                         </span>
+                      </div>
+                    )}
+
+                    {/* VISTA DESPLEGABLE: PACIENTES ASIGNADOS */}
+                    {estaViendoPac && (
+                      <div className="mt-3 pt-3 border-t border-[#DDD6CC] space-y-2 animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#4A554E]">
+                            Pacientes Asignados ({misPacientes.length})
+                          </span>
+                        </div>
+                        
+                        {misPacientes.length === 0 ? (
+                          <div className="py-2.5 text-center text-xs text-[#8C9B91] bg-[#FAF8F5] rounded-xl border border-[#DDD6CC]">
+                            Este profesional no tiene pacientes asignados en Admisión.
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                            {misPacientes.map(paciente => (
+                              <div key={paciente.id} className="flex items-center justify-between p-2.5 bg-white border border-[#DDD6CC] rounded-xl hover:border-[#A8532F] transition-colors">
+                                <div>
+                                  <span className="font-bold text-[#1E2923] text-xs block">{paciente.nombre} {paciente.apellido}</span>
+                                  <span className="text-[10px] text-[#6F7D74] font-mono block mt-0.5">
+                                    {paciente.diasAtencion || 'Días a coordinar'}
+                                  </span>
+                                </div>
+                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold ${
+                                  paciente.modalidad === 'Presencial'
+                                    ? 'bg-[#EBF2EE] text-[#223D30]'
+                                    : paciente.modalidad === 'Virtual'
+                                    ? 'bg-[#F5EFEA] text-[#A8532F]'
+                                    : 'bg-[#FAF0E6] text-[#223D30]'
+                                }`}>
+                                  {paciente.modalidad}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
 

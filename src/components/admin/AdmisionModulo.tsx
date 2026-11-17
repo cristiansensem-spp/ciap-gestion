@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   guardarPaciente, 
   obtenerPacientes, 
@@ -23,34 +23,37 @@ import {
   ChevronsDownUp, 
   ChevronsUpDown, 
   RefreshCw, 
-  UserCheck 
+  UserCheck,
+  AlertCircle,
+  UserMinus 
 } from 'lucide-react';
 
 export default function AdmisionModulo() {
   const [pacientes, setPacientes] = useState<Paciente[]>([]);
   const [profesionales, setProfesionales] = useState<Profesional[]>([]);
   const [busqueda, setBusqueda] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'Sin Asignar' | 'Bajas'>('Todos'); 
   const [cargando, setCargando] = useState(false);
   const [guardadoExito, setGuardadoExito] = useState(false);
 
-  // Formulario Nuevo Paciente (Soporte Presencial, Virtual y Híbrido)
+  // Formulario Nuevo Paciente
   const [nombre, setNombre] = useState('');
   const [apellido, setApellido] = useState('');
   const [dni, setDni] = useState('');
   const [telefono, setTelefono] = useState('');
   const [modalidad, setModalidad] = useState<Modalidad | 'Presencial y Virtual'>('Presencial');
   const [diasAtencion, setDiasAtencion] = useState('');
-  const [profesionalId, setProfesionalId] = useState('');
+  const [especialidad, setEspecialidad] = useState('Terapia para adultos'); 
+  const [profesionalId, setProfesionalId] = useState(''); 
   const [motivoConsulta, setMotivoConsulta] = useState('');
   const [notaInicial, setNotaInicial] = useState('');
 
-  // Estados interactivos de lista
+  // Estados interactivos
   const [tarjetasColapsadas, setTarjetasColapsadas] = useState<{ [id: string]: boolean }>({});
   const [todasColapsadas, setTodasColapsadas] = useState(false);
   const [hilosAbiertos, setHilosAbiertos] = useState<{ [id: string]: boolean }>({});
   const [textoNuevaNota, setTextoNuevaNota] = useState<{ [id: string]: string }>({});
 
-  // Reasignación de Profesional y Actualización de Horarios
   const [reasignandoPacienteId, setReasignandoPacienteId] = useState<string | null>(null);
   const [nuevoProfIdSeleccionado, setNuevoProfIdSeleccionado] = useState('');
   const [nuevosDiasSeleccionados, setNuevosDiasSeleccionados] = useState('');
@@ -64,10 +67,6 @@ export default function AdmisionModulo() {
       ]);
       setPacientes(dataPacientes.sort((a, b) => (b.fechaCreacion || '').localeCompare(a.fechaCreacion || '')));
       setProfesionales(dataProfesionales);
-
-      if (dataProfesionales.length > 0 && !profesionalId) {
-        setProfesionalId(dataProfesionales[0].id);
-      }
     } catch (error) {
       console.error('Error cargando datos de admisión:', error);
     }
@@ -84,27 +83,30 @@ export default function AdmisionModulo() {
     setCargando(true);
     try {
       const profElegido = profesionales.find(p => p.id === profesionalId);
-      await guardarPaciente(
-        {
-          nombre: nombre.trim(),
-          apellido: apellido.trim(),
-          dni: dni.trim() || 'S/DNI',
-          telefono: telefono.trim(),
-          modalidad: modalidad as any,
-          diasAtencion: diasAtencion.trim() || 'A coordinar',
-          profesionalId,
-          profesionalNombre: profElegido ? profElegido.nombre : 'Sin asignar',
-          estado: 'En Admisión',
-          motivoConsulta: motivoConsulta.trim() || 'Consulta inicial'
-        },
-        notaInicial.trim() ? notaInicial.trim() : undefined
-      );
+      
+      const nuevoPaciente = {
+        nombre: nombre.trim(),
+        apellido: apellido.trim(),
+        dni: dni.trim() || 'S/DNI',
+        telefono: telefono.trim(),
+        modalidad: modalidad as any,
+        diasAtencion: diasAtencion.trim() || 'A coordinar',
+        especialidad: especialidad, 
+        profesionalId: profesionalId || '', 
+        profesionalNombre: profElegido ? profElegido.nombre : 'Sin asignar', 
+        estado: 'En Admisión',
+        motivoConsulta: motivoConsulta.trim() || 'Consulta inicial'
+      };
+
+      await guardarPaciente(nuevoPaciente, notaInicial.trim() ? notaInicial.trim() : undefined);
 
       setNombre('');
       setApellido('');
       setDni('');
       setTelefono('');
       setDiasAtencion('');
+      setEspecialidad('Terapia para adultos');
+      setProfesionalId(''); 
       setMotivoConsulta('');
       setNotaInicial('');
       setGuardadoExito(true);
@@ -135,7 +137,7 @@ export default function AdmisionModulo() {
 
   const iniciarReasignacion = (paciente: Paciente) => {
     setReasignandoPacienteId(paciente.id);
-    setNuevoProfIdSeleccionado(paciente.profesionalId || (profesionales[0]?.id ?? ''));
+    setNuevoProfIdSeleccionado(paciente.profesionalId || (profesionales.length > 0 ? profesionales[0].id : ''));
     setNuevosDiasSeleccionados(paciente.diasAtencion || '');
   };
 
@@ -148,14 +150,12 @@ export default function AdmisionModulo() {
     try {
       const diasFinales = nuevosDiasSeleccionados.trim() || 'A coordinar';
       
-      // Actualizar terapeuta y días/horario
       await actualizarPaciente(pacienteId, {
         profesionalId: nuevoProf.id,
         profesionalNombre: nuevoProf.nombre,
         diasAtencion: diasFinales
       });
 
-      // Dejar trazabilidad en el historial clínico
       await agregarNotaAlHilo(
         pacienteId, 
         `Reasignado/a a ${nuevoProf.nombre} por administración. Horarios acordados: ${diasFinales}.`
@@ -171,11 +171,27 @@ export default function AdmisionModulo() {
     }
   };
 
+  const handleCambiarEstado = async (paciente: Paciente, nuevoEstado: 'De Baja' | 'En Admisión') => {
+    const accion = nuevoEstado === 'De Baja' ? 'dar de baja' : 'reactivar';
+    if (!window.confirm(`¿Estás seguro de que deseás ${accion} a ${paciente.nombre} ${paciente.apellido}?`)) return;
+
+    try {
+      await actualizarPaciente(paciente.id, { estado: nuevoEstado });
+      
+      const textoNota = nuevoEstado === 'De Baja' 
+        ? 'Paciente dado de baja administrativamente.' 
+        : 'Paciente reactivado en el sistema.';
+        
+      await agregarNotaAlHilo(paciente.id, textoNota);
+      await cargarDatos();
+    } catch (error) {
+      console.error(`Error al ${accion} paciente:`, error);
+      alert(`No se pudo ${accion} al paciente.`);
+    }
+  };
+
   const toggleColapsarTarjeta = (id: string) => {
-    setTarjetasColapsadas(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
+    setTarjetasColapsadas(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const toggleTodas = () => {
@@ -189,22 +205,40 @@ export default function AdmisionModulo() {
   };
 
   const toggleHilo = (id: string) => {
-    setHilosAbiertos(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
+    setHilosAbiertos(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const pacientesFiltrados = pacientes.filter(p =>
-    `${p.nombre} ${p.apellido} ${p.dni} ${p.telefono} ${p.profesionalNombre || ''} ${p.diasAtencion || ''} ${p.motivoConsulta || ''}`
-      .toLowerCase()
-      .includes(busqueda.toLowerCase())
-  );
+  // Filtrado Seguro
+  const pacientesFiltrados = useMemo(() => {
+    return pacientes.filter(p => {
+      const pData = p as any;
+      const esBaja = pData.estado === 'De Baja';
+      const especialidad = pData.especialidad || '';
+
+      if (filtroEstado === 'Bajas' && !esBaja) return false;
+      if (filtroEstado !== 'Bajas' && esBaja) return false;
+      if (filtroEstado === 'Sin Asignar' && p.profesionalNombre !== 'Sin asignar') return false;
+
+      if (busqueda.trim() !== '') {
+        const termino = busqueda.toLowerCase();
+        const coincideBuscador = `${p.nombre} ${p.apellido} ${p.dni} ${p.telefono} ${p.profesionalNombre || ''} ${p.diasAtencion || ''} ${p.motivoConsulta || ''} ${especialidad}`
+          .toLowerCase()
+          .includes(termino);
+        if (!coincideBuscador) return false;
+      }
+
+      return true;
+    });
+  }, [pacientes, busqueda, filtroEstado]);
+
+  const cantSinAsignar = pacientes.filter(p => p.profesionalNombre === 'Sin asignar' && (p as any).estado !== 'De Baja').length;
+  const cantBajas = pacientes.filter(p => (p as any).estado === 'De Baja').length;
+  const cantActivos = pacientes.filter(p => (p as any).estado !== 'De Baja').length;
 
   return (
     <div className="space-y-6">
       
-      {/* Banner de Triaje y Admisión */}
+      {/* Banner */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 bg-[#223D30] text-white rounded-3xl p-6 sm:p-7 shadow-xs">
         <div>
           <span className="inline-block text-[11px] font-bold tracking-widest text-[#E3A382] uppercase mb-1">
@@ -224,10 +258,9 @@ export default function AdmisionModulo() {
         </div>
       </div>
 
-      {/* Grid: Formulario Izquierdo + Lista Derecha */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
         
-        {/* Formulario Fijo de Registro */}
+        {/* Formulario */}
         <div className="xl:col-span-5 bg-white border border-[#E8E3DA] rounded-3xl p-6 shadow-xs xl:sticky xl:top-24">
           <div className="flex items-center gap-3 pb-4 mb-5 border-b border-[#F0EBE3]">
             <div className="w-9 h-9 rounded-2xl bg-[#A8532F] text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -338,13 +371,36 @@ export default function AdmisionModulo() {
 
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
+                Especialidad Requerida
+              </label>
+              <select
+                value={especialidad}
+                onChange={(e) => setEspecialidad(e.target.value)}
+                className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-semibold text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] focus:bg-white cursor-pointer"
+              >
+                <option value="Terapia para adultos">Terapia para adultos</option>
+                <option value="Terapia para niños">Terapia para niños</option>
+                <option value="Terapia para adolescentes">Terapia para adolescentes</option>
+                <option value="Psicopedagogía">Psicopedagogía</option>
+                <option value="Psiquiatría">Psiquiatría</option>
+                <option value="TCC">TCC</option>
+                <option value="Terapia de parejas">Terapia de parejas</option>
+                <option value="Orientación vocacional">Orientación vocacional</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#3C4A42] mb-1">
                 Derivar al Profesional
               </label>
               <select
                 value={profesionalId}
                 onChange={(e) => setProfesionalId(e.target.value)}
-                className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-semibold text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] focus:bg-white cursor-pointer"
+                className={`w-full px-3 py-2 bg-[#FAF8F5] border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#223D30] focus:bg-white cursor-pointer ${
+                  profesionalId === '' ? 'border-amber-400 text-amber-900 bg-amber-50' : 'border-[#DDD6CC] text-[#1E2923]'
+                }`}
               >
+                <option value="">-- Por Asignar / A Confirmar --</option>
                 {profesionales.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.nombre} ({p.diasAtencion} · {p.modalidad})
@@ -389,23 +445,23 @@ export default function AdmisionModulo() {
           </form>
         </div>
 
-        {/* Lista de Pacientes con Historial y Reasignación */}
+        {/* Lista de Pacientes */}
         <div className="xl:col-span-7 bg-white border border-[#E8E3DA] rounded-3xl p-6 shadow-xs">
           
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 border-b border-[#F0EBE3]">
-            <div>
-              <h3 className="text-sm font-bold text-[#1E2923]">Nómina en Admisión</h3>
-              <p className="text-[11px] text-[#6F7D74]">
-                Total registrados: <strong className="text-[#1E2923]">{pacientesFiltrados.length}</strong>
-              </p>
-            </div>
+          <div className="flex flex-col gap-4 mb-5 pb-4 border-b border-[#F0EBE3]">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-[#1E2923]">Nómina en Admisión</h3>
+                <p className="text-[11px] text-[#6F7D74]">
+                  Total activos: <strong className="text-[#1E2923]">{cantActivos}</strong>
+                </p>
+              </div>
 
-            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={toggleTodas}
                 title={todasColapsadas ? "Expandir todas" : "Plegar a cápsula"}
-                className="flex items-center gap-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] hover:bg-[#EFECE6] text-[#4A554E] rounded-xl text-xs font-semibold cursor-pointer"
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] hover:bg-[#EFECE6] text-[#4A554E] rounded-xl text-xs font-semibold cursor-pointer shrink-0"
               >
                 {todasColapsadas ? (
                   <>
@@ -419,48 +475,109 @@ export default function AdmisionModulo() {
                   </>
                 )}
               </button>
+            </div>
 
-              <div className="relative w-full sm:w-56">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex bg-[#FAF8F5] p-1 rounded-xl border border-[#DDD6CC] text-xs font-semibold w-full sm:w-auto shrink-0 overflow-x-auto">
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado('Todos')}
+                  className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    filtroEstado === 'Todos' ? 'bg-[#223D30] text-white shadow-2xs font-bold' : 'text-[#4A554E] hover:text-[#1E2923]'
+                  }`}
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado('Sin Asignar')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    filtroEstado === 'Sin Asignar' ? 'bg-amber-100 text-amber-900 shadow-2xs font-bold border border-amber-300' : 'text-[#4A554E] hover:text-[#1E2923]'
+                  }`}
+                >
+                  <span>Sin Asignar</span>
+                  {cantSinAsignar > 0 && (
+                    <span className="flex items-center justify-center w-4 h-4 bg-amber-500 text-white rounded-full text-[9px] font-bold">
+                      {cantSinAsignar}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEstado('Bajas')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    filtroEstado === 'Bajas' ? 'bg-zinc-600 text-white shadow-2xs font-bold border border-zinc-700' : 'text-[#4A554E] hover:text-[#1E2923]'
+                  }`}
+                >
+                  <span>Bajas</span>
+                  {cantBajas > 0 && (
+                    <span className={`flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold ${
+                      filtroEstado === 'Bajas' ? 'bg-zinc-800 text-white' : 'bg-zinc-300 text-zinc-700'
+                    }`}>
+                      {cantBajas}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              <div className="relative w-full">
                 <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={busqueda}
                   onChange={(e) => setBusqueda(e.target.value)}
-                  placeholder="Buscar paciente, DNI, psicólogo..."
-                  className="w-full pl-8 pr-2.5 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium text-[#1E2923] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#223D30] focus:bg-white"
+                  placeholder="Buscar paciente, especialidad..."
+                  className="w-full pl-8 pr-2.5 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium text-[#1E2923] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#223D30] focus:bg-white h-full"
                 />
               </div>
             </div>
           </div>
 
-          {/* Scroll de la nómina */}
           <div className="overflow-y-auto max-h-[calc(100vh-270px)] pr-1 space-y-3">
             {pacientesFiltrados.length === 0 ? (
               <div className="py-16 text-center text-[#8C9B91] text-xs">
-                No hay pacientes registrados o no coinciden con la búsqueda.
+                {filtroEstado === 'Sin Asignar' 
+                  ? 'No hay pacientes pendientes de asignación.' 
+                  : filtroEstado === 'Bajas'
+                  ? 'No hay pacientes dados de baja en el sistema.'
+                  : 'No hay pacientes registrados o no coinciden con la búsqueda.'}
               </div>
             ) : (
               pacientesFiltrados.map((paciente) => {
                 const estaColapsada = tarjetasColapsadas[paciente.id] ?? false;
                 const estaReasignando = reasignandoPacienteId === paciente.id;
                 const hiloAbierto = hilosAbiertos[paciente.id] ?? false;
-                const totalNotas = paciente.historialNotas?.length || 0;
-                const ultimaNota = totalNotas > 0 ? paciente.historialNotas[totalNotas - 1] : null;
+                const totalNotas = paciente.historialNotas ? paciente.historialNotas.length : 0;
+                const ultimaNota = totalNotas > 0 && paciente.historialNotas ? paciente.historialNotas[totalNotas - 1] : null;
+                
+                const pData = paciente as any;
+                const sinAsignar = paciente.profesionalNombre === 'Sin asignar';
+                const esBaja = pData.estado === 'De Baja';
+                const especialidadPaciente = pData.especialidad; 
+
+                let cardStyle = 'border-[#EFECE6] bg-[#FCFBF9] hover:bg-white hover:border-[#DDD6CC]';
+                if (esBaja) {
+                  cardStyle = 'border-zinc-300 bg-zinc-50 opacity-90 hover:opacity-100 hover:bg-zinc-100';
+                } else if (sinAsignar) {
+                  cardStyle = 'border-amber-300 bg-amber-50 hover:bg-amber-100/50';
+                }
 
                 return (
                   <div 
                     key={paciente.id} 
-                    className="border border-[#EFECE6] bg-[#FCFBF9] hover:bg-white hover:border-[#DDD6CC] rounded-2xl p-4 transition-all duration-150 shadow-2xs space-y-3"
+                    className={`border transition-all duration-150 shadow-2xs space-y-3 rounded-2xl p-4 ${cardStyle}`}
                   >
-                    {/* CÁPSULA PERMANENTE */}
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="text-sm font-bold text-[#1E2923]">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <h4 className={`text-sm font-bold ${esBaja ? 'text-zinc-600 line-through' : 'text-[#1E2923]'}`}>
                             {paciente.nombre} {paciente.apellido}
                           </h4>
+                          
                           <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                            paciente.modalidad === 'Presencial' 
+                            esBaja 
+                              ? 'bg-zinc-200 text-zinc-600 border border-zinc-300'
+                              : paciente.modalidad === 'Presencial' 
                               ? 'bg-[#EBF2EE] text-[#223D30] border border-[#C5D9CD]'
                               : paciente.modalidad === 'Virtual'
                               ? 'bg-[#F5EFEA] text-[#A8532F] border border-[#E9D7C9]'
@@ -468,57 +585,107 @@ export default function AdmisionModulo() {
                           }`}>
                             {paciente.modalidad}
                           </span>
+                          
+                          {especialidadPaciente && !esBaja && (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#EFECE6] text-[#4A554E] border border-[#DDD6CC]">
+                              {especialidadPaciente}
+                            </span>
+                          )}
+
+                          {sinAsignar && !esBaja && (
+                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-400">
+                              <AlertCircle className="w-3 h-3" />
+                              Falta Asignar
+                            </span>
+                          )}
+
+                          {esBaja && (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-zinc-700 text-white shadow-2xs">
+                              Inactivo / Baja
+                            </span>
+                          )}
                         </div>
 
-                        <div className="flex items-center gap-2 mt-1 text-[11px] text-[#6F7D74] font-mono flex-wrap">
+                        <div className={`flex items-center gap-2 mt-1 text-[11px] font-mono flex-wrap ${esBaja ? 'text-zinc-500' : 'text-[#6F7D74]'}`}>
                           <span>DNI: {paciente.dni}</span>
                           <span>•</span>
                           <span className="flex items-center gap-1">
-                            <Phone className="w-3 h-3 text-[#223D30]" />
-                            <strong className="text-[#1E2923] text-xs font-sans">{paciente.telefono}</strong>
+                            <Phone className={`w-3 h-3 ${esBaja ? 'text-zinc-400' : 'text-[#223D30]'}`} />
+                            <strong className={`text-xs font-sans ${esBaja ? 'text-zinc-500' : 'text-[#1E2923]'}`}>
+                              {paciente.telefono}
+                            </strong>
                           </span>
                           <span>•</span>
-                          <span>Psic: <strong className="text-[#1E2923] font-sans">{paciente.profesionalNombre || 'Sin asignar'}</strong></span>
+                          <span>
+                            Psic: 
+                            <strong className={`ml-1 font-sans ${esBaja ? 'text-zinc-500' : sinAsignar ? 'text-amber-700' : 'text-[#1E2923]'}`}>
+                              {paciente.profesionalNombre}
+                            </strong>
+                          </span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {/* Botón Reasignar */}
+                        {!esBaja && (
+                          <button
+                            type="button"
+                            onClick={() => iniciarReasignacion(paciente)}
+                            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-xl transition-all cursor-pointer shadow-2xs ${
+                              sinAsignar
+                                ? 'bg-[#A8532F] text-white hover:bg-[#914524] border-transparent'
+                                : 'bg-white hover:bg-[#EFECE6] border border-[#DDD6CC] text-[#223D30]'
+                            }`}
+                          >
+                            <RefreshCw className={`w-3 h-3 ${sinAsignar ? 'text-white' : 'text-[#A8532F]'}`} />
+                            <span className="hidden sm:inline">{sinAsignar ? 'Asignar' : 'Reasignar'}</span>
+                          </button>
+                        )}
+
                         <button
                           type="button"
-                          onClick={() => iniciarReasignacion(paciente)}
-                          className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-[#EFECE6] border border-[#DDD6CC] text-[#223D30] text-[11px] font-bold rounded-xl transition-all cursor-pointer shadow-2xs"
+                          onClick={() => handleCambiarEstado(paciente, esBaja ? 'En Admisión' : 'De Baja')}
+                          className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-xl transition-all cursor-pointer shadow-2xs ${
+                            esBaja
+                              ? 'bg-zinc-800 text-white hover:bg-black border-transparent'
+                              : 'bg-white hover:bg-red-50 border border-[#DDD6CC] hover:border-red-200 text-red-600'
+                          }`}
                         >
-                          <RefreshCw className="w-3 h-3 text-[#A8532F]" />
-                          <span>Reasignar</span>
+                          {esBaja ? <UserCheck className="w-3 h-3 text-emerald-400" /> : <UserMinus className="w-3 h-3" />}
+                          <span className="hidden sm:inline">{esBaja ? 'Reactivar' : 'Baja'}</span>
                         </button>
 
-                        {/* Flecha Plegar / Expandir */}
                         <button
                           type="button"
                           onClick={() => toggleColapsarTarjeta(paciente.id)}
-                          className="p-1 rounded-lg hover:bg-[#EFECE6] text-[#6F7D74] hover:text-[#1E2923] transition-colors cursor-pointer"
+                          className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                            esBaja 
+                              ? 'hover:bg-zinc-200 text-zinc-500' 
+                              : sinAsignar 
+                              ? 'hover:bg-amber-200 text-amber-800' 
+                              : 'hover:bg-[#EFECE6] text-[#6F7D74] hover:text-[#1E2923]'
+                          }`}
                         >
                           {estaColapsada ? (
-                            <ChevronDown className="w-4 h-4 text-[#A8532F]" />
+                            <ChevronDown className={`w-4 h-4 ${esBaja ? 'text-zinc-600' : sinAsignar ? 'text-amber-900' : 'text-[#A8532F]'}`} />
                           ) : (
-                            <ChevronUp className="w-4 h-4 text-[#223D30]" />
+                            <ChevronUp className={`w-4 h-4 ${esBaja ? 'text-zinc-600' : sinAsignar ? 'text-amber-900' : 'text-[#223D30]'}`} />
                           )}
                         </button>
                       </div>
                     </div>
 
-                    {/* VISTA DE REASIGNACIÓN (PROFESIONAL + DÍAS / HORARIOS) */}
-                    {estaReasignando && (
-                      <div className="p-3 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl space-y-2.5 animate-in fade-in duration-100">
+                    {estaReasignando && !esBaja && (
+                      <div className={`p-3 rounded-xl space-y-2.5 animate-in fade-in duration-100 ${
+                        sinAsignar ? 'bg-amber-100/50 border border-amber-300' : 'bg-[#FAF8F5] border border-[#DDD6CC]'
+                      }`}>
                         <span className="text-xs font-bold text-[#1E2923] block">
-                          Reasignar Terapeuta y Actualizar Horarios:
+                          {sinAsignar ? 'Asignar Terapeuta Inicial y Horarios:' : 'Reasignar Terapeuta y Actualizar Horarios:'}
                         </span>
 
                         <div className="space-y-2">
                           <div>
                             <label className="block text-[10px] font-bold uppercase text-[#6F7D74] mb-0.5">
-                              Nuevo Profesional
+                              Profesional
                             </label>
                             <select
                               value={nuevoProfIdSeleccionado}
@@ -527,7 +694,7 @@ export default function AdmisionModulo() {
                             >
                               {profesionales.map((p) => (
                                 <option key={p.id} value={p.id}>
-                                  {p.nombre} ({p.diasAtencion} · {p.horarios} · {p.modalidad})
+                                  {p.nombre} ({p.diasAtencion} · {p.modalidad})
                                 </option>
                               ))}
                             </select>
@@ -535,7 +702,7 @@ export default function AdmisionModulo() {
 
                           <div>
                             <label className="block text-[10px] font-bold uppercase text-[#6F7D74] mb-0.5">
-                              Nuevos días / Horario acordado con el paciente
+                              Días / Horario acordado con el paciente
                             </label>
                             <input
                               type="text"
@@ -561,32 +728,34 @@ export default function AdmisionModulo() {
                             onClick={() => handleConfirmarReasignacion(paciente.id)}
                             className="px-3 py-1 bg-[#223D30] hover:bg-[#182C22] text-white text-[11px] font-bold rounded-xl transition-all cursor-pointer shadow-2xs disabled:opacity-40"
                           >
-                            {procesandoReasignacion ? 'Reasignando...' : 'Confirmar Derivación'}
+                            {procesandoReasignacion ? 'Confirmando...' : 'Confirmar Derivación'}
                           </button>
                         </div>
                       </div>
                     )}
 
-                    {/* VISTA EXPANDIDA: MOTIVO, ÚLTIMO AVISO E HILO DE NOTAS */}
                     {!estaColapsada && (
-                      <div className="pt-2 border-t border-[#F0EBE3] space-y-2.5 text-xs">
+                      <div className={`pt-2 border-t space-y-2.5 text-xs ${
+                        esBaja ? 'border-zinc-300' : sinAsignar ? 'border-amber-200' : 'border-[#F0EBE3]'
+                      }`}>
                         
                         <div className="flex items-center justify-between text-[#5C6B61] flex-wrap gap-1">
                           <div>
-                            <strong className="text-[#1E2923]">Motivo / Horarios: </strong>
-                            <span>{paciente.motivoConsulta || 'Consulta clínica'}</span>
+                            <strong className={`${esBaja ? 'text-zinc-500' : 'text-[#1E2923]'}`}>Motivo / Horarios: </strong>
+                            <span className={esBaja ? 'text-zinc-500' : ''}>{paciente.motivoConsulta || 'Consulta clínica'}</span>
                             {paciente.diasAtencion && (
-                              <span className="ml-2 font-mono text-[#A8532F] font-bold">
+                              <span className={`ml-2 font-mono font-bold ${esBaja ? 'text-zinc-500' : 'text-[#A8532F]'}`}>
                                 ({paciente.diasAtencion})
                               </span>
                             )}
                           </div>
                         </div>
 
-                        {/* Último aviso destacado */}
                         {ultimaNota && (
-                          <div className="p-3 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl space-y-1">
-                            <div className="flex items-center justify-between text-[#A8532F] font-bold">
+                          <div className={`p-3 border rounded-xl space-y-1 ${
+                            esBaja ? 'bg-zinc-100/50 border-zinc-300' : sinAsignar ? 'bg-amber-100/30 border-amber-200' : 'bg-[#FAF8F5] border-[#DDD6CC]'
+                          }`}>
+                            <div className={`flex items-center justify-between font-bold ${esBaja ? 'text-zinc-500' : 'text-[#A8532F]'}`}>
                               <span>Último aviso:</span>
                               <span className="text-[10px] text-zinc-400 font-mono">{ultimaNota.fechaHora}</span>
                             </div>
@@ -594,12 +763,13 @@ export default function AdmisionModulo() {
                           </div>
                         )}
 
-                        {/* Desplegable del Hilo Completo de Notas */}
                         <div>
                           <button
                             type="button"
                             onClick={() => toggleHilo(paciente.id)}
-                            className="text-[#223D30] hover:text-[#A8532F] font-bold flex items-center gap-1 cursor-pointer"
+                            className={`font-bold flex items-center gap-1 cursor-pointer ${
+                              esBaja ? 'text-zinc-600 hover:text-zinc-800' : 'text-[#223D30] hover:text-[#A8532F]'
+                            }`}
                           >
                             <FileText className="w-3.5 h-3.5" />
                             <span>Historial de Notas ({totalNotas})</span>
@@ -607,7 +777,7 @@ export default function AdmisionModulo() {
                           </button>
 
                           {hiloAbierto && (
-                            <div className="mt-2 pl-3 border-l-2 border-[#DDD6CC] space-y-2">
+                            <div className={`mt-2 pl-3 border-l-2 space-y-2 ${esBaja ? 'border-zinc-300' : sinAsignar ? 'border-amber-300' : 'border-[#DDD6CC]'}`}>
                               {paciente.historialNotas?.map((nota) => (
                                 <div key={nota.id} className="text-[11px] text-[#4A554E]">
                                   <div className="flex items-center justify-between font-mono text-[10px] text-[#8C9B91]">
@@ -618,7 +788,6 @@ export default function AdmisionModulo() {
                                 </div>
                               ))}
 
-                              {/* Agregar nota al hilo */}
                               <div className="flex items-center gap-2 pt-2">
                                 <input
                                   type="text"
@@ -630,7 +799,7 @@ export default function AdmisionModulo() {
                                 <button
                                   type="button"
                                   onClick={() => handleAgregarNota(paciente.id)}
-                                  className="p-1.5 bg-[#223D30] hover:bg-[#182C22] text-white rounded-xl cursor-pointer"
+                                  className={`p-1.5 text-white rounded-xl cursor-pointer ${esBaja ? 'bg-zinc-600 hover:bg-zinc-800' : 'bg-[#223D30] hover:bg-[#182C22]'}`}
                                   title="Agregar nota"
                                 >
                                   <Send className="w-3.5 h-3.5" />

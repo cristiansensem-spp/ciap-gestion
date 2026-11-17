@@ -7,7 +7,9 @@ import {
   obtenerSesiones, 
   guardarSesion, 
   obtenerProfesionales,
-  obtenerGastos
+  obtenerGastos,
+  rectificarSesion, // NUEVO: para actualizar el estado de la sesión
+  agregarNotaAlHilo // NUEVO: para registrar motivos de ausencia/reprogramación
 } from '../../lib/servicios';
 import { Paciente, Sesion, Profesional, Gasto } from '../../types';
 import { 
@@ -30,7 +32,9 @@ import {
   Clock,
   XCircle,
   AlertCircle,
-  ArrowLeft
+  ArrowLeft,
+  CalendarClock,
+  X
 } from 'lucide-react';
 
 interface Props {
@@ -62,9 +66,16 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
   const [pacienteSeleccionadoId, setPacienteSeleccionadoId] = useState('');
   const [fechaTurno, setFechaTurno] = useState(() => new Date().toISOString().slice(0, 10));
   const [horaTurno, setHoraTurno] = useState('16:00');
-  const [estadoAsistencia, setEstadoAsistencia] = useState<'Atendida' | 'No se conectó' | 'Suspendida'>('Atendida');
+  const [estadoAsistencia, setEstadoAsistencia] = useState<'Pendiente' | 'Atendida' | 'No se conectó' | 'Suspendida' | 'Reprogramar'>('Atendida');
   const [guardandoSesion, setGuardandoSesion] = useState(false);
   const [sesionExito, setSesionExito] = useState(false);
+
+  // NUEVOS ESTADOS PARA MODAL DE MOTIVO
+  const [modalMotivoAbierto, setModalMotivoAbierto] = useState(false);
+  const [motivoSesion, setMotivoSesion] = useState('');
+  const [nuevaFechaReprogramacion, setNuevaFechaReprogramacion] = useState(() => new Date().toISOString().slice(0, 10));
+  const [nuevaHoraReprogramacion, setNuevaHoraReprogramacion] = useState('16:00');
+  const [sesionTemporalGuardar, setSesionTemporalGuardar] = useState<any>(null);
 
   const esSandra = user?.email?.toLowerCase().includes('sandra') || user?.email === 'sandell661@gmail.com';
 
@@ -131,17 +142,17 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
     ? 'Lic. Sandra' 
     : user?.email;
 
-  const handleSubmitSesion = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Lógica principal de guardado de sesión
+  const procesarGuardadoSesion = async (estadoFinal: string, motivoOpcional: string = '') => {
     if (!pacienteSeleccionadoId) return;
-
-    const pac = misPacientes.find(p => p.id === pacienteSeleccionadoId);
-    const nombrePaciente = pac ? `${pac.nombre} ${pac.apellido}` : 'Paciente Virtual';
-    const idProf = profesionalActual?.id || 'prof-sandra';
-    const nomProf = profesionalActual?.nombre || 'Lic. Sandra';
-
+    
     setGuardandoSesion(true);
     try {
+      const pac = misPacientes.find(p => p.id === pacienteSeleccionadoId);
+      const nombrePaciente = pac ? `${pac.nombre} ${pac.apellido}` : 'Paciente Virtual';
+      const idProf = profesionalActual?.id || 'prof-sandra';
+      const nomProf = profesionalActual?.nombre || 'Lic. Sandra';
+
       const sesionPayload: any = {
         pacienteId: pacienteSeleccionadoId,
         pacienteNombre: nombrePaciente,
@@ -152,15 +163,29 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
         modalidad: 'Virtual',
         importe: 0,
         estadoPago: 'Pendiente',
-        estadoAsistencia: estadoAsistencia
+        estadoAsistencia: estadoFinal
       };
 
       await guardarSesion(sesionPayload);
+
+      // Si hay un motivo de ausencia, suspensión o reprogramación, dejar nota en el paciente
+      if (motivoOpcional.trim() !== '') {
+         let textoNota = '';
+         if (estadoFinal === 'Reprogramar') {
+             textoNota = `El profesional reprogramó el turno para el ${nuevaFechaReprogramacion} a las ${nuevaHoraReprogramacion} hs. Motivo: ${motivoOpcional}`;
+             // También podríamos crear la nueva sesión automáticamente aquí si se desea
+         } else {
+             textoNota = `Sesión registrada como ${estadoFinal}. Motivo del profesional: ${motivoOpcional}`;
+         }
+         await agregarNotaAlHilo(pacienteSeleccionadoId, textoNota);
+      }
 
       setSesionExito(true);
       setTimeout(() => setSesionExito(false), 3000);
 
       await cargarDatos();
+      setModalMotivoAbierto(false);
+      setMotivoSesion('');
     } catch (error) {
       console.error('Error al guardar sesión virtual:', error);
       alert('No se pudo registrar la sesión.');
@@ -168,6 +193,29 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
       setGuardandoSesion(false);
     }
   };
+
+  // Manejador del submit del formulario
+  const handleSubmitSesion = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (estadoAsistencia === 'No se conectó' || estadoAsistencia === 'Suspendida' || estadoAsistencia === 'Reprogramar') {
+      // Abrir modal de motivo antes de guardar
+      setSesionTemporalGuardar({ estadoAsistencia });
+      setModalMotivoAbierto(true);
+    } else {
+      // Guardar directo si fue Atendida
+      procesarGuardadoSesion(estadoAsistencia);
+    }
+  };
+
+  const handleConfirmarMotivo = () => {
+    if (!motivoSesion.trim()) {
+        alert('Debes ingresar un motivo para informar a Recepción.');
+        return;
+    }
+    procesarGuardadoSesion(sesionTemporalGuardar.estadoAsistencia, motivoSesion);
+  };
+
 
   const porcHon = 60;
 
@@ -513,15 +561,15 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                     <Video className="w-4 h-4 text-emerald-300" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-[#1E2923]">Confirmar Asistencia Virtual</h3>
-                    <p className="text-[11px] text-[#6F7D74]">Informa a administración con un clic</p>
+                    <h3 className="text-sm font-bold text-[#1E2923]">Agendar / Asentar Turno</h3>
+                    <p className="text-[11px] text-[#6F7D74]">Confirma la agenda o asienta la consulta</p>
                   </div>
                 </div>
 
                 {sesionExito && (
                   <div className="mb-4 p-3 bg-[#EAF5EF] border border-[#BCE1CC] text-[#1E5C38] rounded-2xl text-xs font-semibold flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 shrink-0 text-[#2E8B57]" />
-                    <span>¡Sesión informada con éxito a administración!</span>
+                    <span>¡Turno procesado e informado con éxito!</span>
                   </div>
                 )}
 
@@ -589,9 +637,11 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                       onChange={(e) => setEstadoAsistencia(e.target.value as any)}
                       className="w-full px-3 py-2.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-bold text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] cursor-pointer"
                     >
+                      <option value="Pendiente">⏳ Agendar Turno (Pendiente)</option>
                       <option value="Atendida">🟢 Atendida (Sesión realizada)</option>
                       <option value="No se conectó">🔴 No se conectó / Ausente</option>
                       <option value="Suspendida">⚪ Sesión suspendida / Cancelada</option>
+                      <option value="Reprogramar">🔄 Reprogramar (Solicitar cambio)</option>
                     </select>
                   </div>
 
@@ -607,7 +657,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                     disabled={guardandoSesion || misPacientes.length === 0}
                     className="w-full mt-2 py-3 bg-[#223D30] hover:bg-[#182C22] text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50"
                   >
-                    {guardandoSesion ? 'Guardando...' : 'Asentar Turno en Agenda'}
+                    {guardandoSesion ? 'Guardando...' : estadoAsistencia === 'Pendiente' ? 'Confirmar y Agendar' : 'Asentar en Historial'}
                   </button>
                 </form>
               </div>
@@ -649,7 +699,13 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                           </div>
 
                           <div className="flex items-center justify-between text-xs text-[#6F7D74] pt-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {asistencia === 'Pendiente' && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-amber-600" />
+                                  <span>Agendado (Pendiente)</span>
+                                </span>
+                              )}
                               {asistencia === 'Atendida' && (
                                 <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#EAF5EF] text-[#1E5C38] border border-[#BCE1CC] flex items-center gap-1">
                                   <CheckCircle2 className="w-3 h-3 text-[#2E8B57]" />
@@ -659,13 +715,19 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                               {asistencia === 'No se conectó' && (
                                 <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 flex items-center gap-1">
                                   <XCircle className="w-3 h-3 text-rose-600" />
-                                  <span>No se conectó</span>
+                                  <span>Ausente</span>
                                 </span>
                               )}
                               {asistencia === 'Suspendida' && (
                                 <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-zinc-100 text-zinc-700 border border-zinc-300 flex items-center gap-1">
                                   <AlertCircle className="w-3 h-3 text-zinc-500" />
                                   <span>Suspendida</span>
+                                </span>
+                              )}
+                               {asistencia === 'Reprogramar' && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-sky-50 text-sky-800 border border-sky-200 flex items-center gap-1">
+                                  <CalendarClock className="w-3 h-3 text-sky-600" />
+                                  <span>Reprogramada</span>
                                 </span>
                               )}
 
@@ -775,7 +837,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                               <div className="flex items-center justify-between text-[#A8532F] font-bold mb-1">
                                 <span className="flex items-center gap-1">
                                   <FileText className="w-3.5 h-3.5" />
-                                  Última indicación de recepción:
+                                  Último aviso (Historial):
                                 </span>
                                 <span className="text-[10px] text-zinc-400 font-mono">{ultimaNota.fechaHora}</span>
                               </div>
@@ -802,7 +864,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                 <div>
                   <h3 className="text-base font-bold text-[#1E2923]">Historial de Liquidaciones de Honorarios</h3>
                   <p className="text-xs text-[#6F7D74]">
-                    Comprobantes y transferencias enviadas por Administración de Centro CIAP los viernes (60% honorarios)[cite: 1, 2].
+                    Comprobantes y transferencias enviadas por Administración de Centro CIAP los viernes (60% honorarios)[cite: 22].
                   </p>
                 </div>
 
@@ -863,7 +925,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                 <div>
                   <h3 className="text-base font-bold text-[#1E2923]">Sesiones Registradas y Estado de Liquidación</h3>
                   <p className="text-xs text-[#6F7D74]">
-                    Seguimiento detallado de turnos realizados y su cómputo para la liquidación semanal del 60%[cite: 1, 2].
+                    Seguimiento detallado de turnos realizados y su cómputo para la liquidación semanal del 60%[cite: 22].
                   </p>
                 </div>
 
@@ -904,6 +966,11 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                           </span>
 
                           <div className="flex items-center gap-1.5">
+                             {asistencia === 'Pendiente' && (
+                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200">
+                                Agendado
+                              </span>
+                            )}
                             {asistencia === 'No se conectó' && (
                               <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded-md border border-rose-200">
                                 Ausente
@@ -912,6 +979,11 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                             {asistencia === 'Suspendida' && (
                               <span className="text-[10px] font-bold text-zinc-600 bg-zinc-100 px-1.5 py-0.5 rounded-md border border-zinc-200">
                                 Suspendida
+                              </span>
+                            )}
+                             {asistencia === 'Reprogramar' && (
+                              <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded-md border border-sky-200">
+                                Reprogramada
                               </span>
                             )}
 
@@ -929,7 +1001,7 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
                                 )
                               ) : (
                                 <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-md">
-                                  Pendiente cobro CIAP
+                                  Pendiente cobro
                                 </span>
                               )
                             )}
@@ -946,6 +1018,105 @@ export default function ProfesionalDashboard({ onVolverAdmin }: Props) {
         )}
 
       </main>
+
+      {/* MODAL DE MOTIVO DE AUSENCIA / CANCELACIÓN / REPROGRAMACIÓN */}
+      {modalMotivoAbierto && sesionTemporalGuardar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white border border-[#E8E3DA] rounded-3xl p-6 sm:p-7 max-w-sm w-full shadow-xl space-y-4">
+            
+            <div className="flex items-center justify-between pb-3 border-b border-[#F0EBE3]">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                   sesionTemporalGuardar.estadoAsistencia === 'Reprogramar' ? 'bg-sky-50 text-sky-600' : 'bg-rose-50 text-rose-600'
+                }`}>
+                  {sesionTemporalGuardar.estadoAsistencia === 'Reprogramar' ? <CalendarClock className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E2923]">
+                    {sesionTemporalGuardar.estadoAsistencia === 'Reprogramar' ? 'Reprogramar Turno' : 'Informar Novedad'}
+                  </h3>
+                  <p className="text-[11px] text-[#6F7D74]">Recepción verá este motivo</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setModalMotivoAbierto(false)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-[#F7F5F0] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <p className="text-[#4A554E] leading-relaxed">
+                Estás marcando la sesión como <strong className="text-[#1E2923]">{sesionTemporalGuardar.estadoAsistencia}</strong>. 
+                Por favor, ingresá el motivo para que Admisión esté al tanto (ej: "Se le cortó la luz", "Tuve un inconveniente personal").
+              </p>
+
+              <div>
+                <label className="block text-[11px] font-bold text-[#1E2923] mb-1.5">
+                  Motivo o detalle (Requerido)
+                </label>
+                <textarea
+                  value={motivoSesion}
+                  onChange={(e) => setMotivoSesion(e.target.value)}
+                  placeholder="Detalle breve..."
+                  rows={3}
+                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#DDD6CC] rounded-xl text-xs font-medium text-[#1E2923] focus:outline-none focus:ring-2 focus:ring-[#223D30] resize-none"
+                />
+              </div>
+
+               {/* Si es reprogramar, pedimos nueva fecha y hora */}
+               {sesionTemporalGuardar.estadoAsistencia === 'Reprogramar' && (
+                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[#F0EBE3]">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[#3C4A42] mb-1">
+                        Nueva Fecha
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={nuevaFechaReprogramacion}
+                        onChange={(e) => setNuevaFechaReprogramacion(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-lg text-xs font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[#3C4A42] mb-1">
+                        Nueva Hora
+                      </label>
+                      <input
+                        type="time"
+                        required
+                        value={nuevaHoraReprogramacion}
+                        onChange={(e) => setNuevaHoraReprogramacion(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-[#FAF8F5] border border-[#DDD6CC] rounded-lg text-xs font-medium"
+                      />
+                    </div>
+                 </div>
+               )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setModalMotivoAbierto(false)}
+                  className="px-3 py-2 text-[#4A554E] hover:text-[#1E2923] font-semibold cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmarMotivo}
+                  disabled={guardandoSesion || !motivoSesion.trim()}
+                  className="px-4 py-2 bg-[#223D30] hover:bg-[#182C22] text-white rounded-xl font-bold transition-all disabled:opacity-40 cursor-pointer shadow-xs"
+                >
+                  {guardandoSesion ? 'Guardando...' : 'Confirmar e Informar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
