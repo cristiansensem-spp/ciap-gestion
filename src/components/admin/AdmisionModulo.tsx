@@ -27,7 +27,8 @@ import {
   AlertCircle,
   UserMinus,
   Pencil, 
-  X 
+  X,
+  Copy // NUEVO: Ícono para duplicar / derivar a otra especialidad
 } from 'lucide-react';
 
 export default function AdmisionModulo() {
@@ -59,7 +60,7 @@ export default function AdmisionModulo() {
   const [motivoConsulta, setMotivoConsulta] = useState('');
   const [notaInicial, setNotaInicial] = useState('');
 
-  // NUEVO: Estados para Terapia de Parejas (2do Integrante)
+  // Estados para Terapia de Parejas (2do Integrante)
   const [nombrePareja, setNombrePareja] = useState('');
   const [apellidoPareja, setApellidoPareja] = useState('');
   const [dniPareja, setDniPareja] = useState('');
@@ -104,6 +105,7 @@ export default function AdmisionModulo() {
     return `${nombreDia} ${dd}/${mm} a las ${horaStr} hs`;
   };
 
+  // 1. INICIAR EDICIÓN (Sobreescribe el paciente actual)
   const handleIniciarEdicion = (paciente: Paciente) => {
     const pData = paciente as any;
     setEditandoId(paciente.id);
@@ -118,7 +120,7 @@ export default function AdmisionModulo() {
     setMotivoConsulta(paciente.motivoConsulta || '');
     setDiasAtencionActual(paciente.diasAtencion || 'A coordinar');
     
-    // Limpiamos los campos temporales
+    // Limpiamos campos de nueva fecha/hora y pareja para no ensuciar
     setFechaAtencion('');
     setHoraAtencion('');
     setNombrePareja('');
@@ -126,6 +128,37 @@ export default function AdmisionModulo() {
     setDniPareja('');
     setEdadPareja('');
     setNotaInicial(''); 
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // 2. DUPLICAR PACIENTE PARA NUEVA ESPECIALIDAD
+  const handleDuplicarPaciente = (paciente: Paciente) => {
+    const pData = paciente as any;
+    setEditandoId(null); // Asegura que al guardar se cree una NUEVA ficha
+    
+    // Precarga datos personales del paciente existente
+    setNombre(paciente.nombre);
+    setApellido(paciente.apellido);
+    setDni(paciente.dni || '');
+    setEdad(pData.edad || '');
+    setTelefono(paciente.telefono || '');
+    
+    // Reinicia los campos clínicos para la nueva derivación
+    setModalidad('Presencial');
+    setEspecialidad('Psiquiatría'); // Ponemos un default diferente para sugerir el cambio
+    setProfesionalId('');
+    setFechaAtencion('');
+    setHoraAtencion('');
+    setDiasAtencionActual('');
+    setMotivoConsulta('');
+    setNotaInicial('Derivación interna simultánea.');
+    
+    // Limpia campos de pareja
+    setNombrePareja('');
+    setApellidoPareja('');
+    setDniPareja('');
+    setEdadPareja('');
+
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -450,7 +483,7 @@ export default function AdmisionModulo() {
                   Edad
                 </label>
                 <input
-                  type="number"
+                  type="text"
                   value={edad}
                   onChange={(e) => setEdad(e.target.value)}
                   placeholder="Ej: 34"
@@ -850,6 +883,19 @@ export default function AdmisionModulo() {
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Botón Duplicar/Derivar a Otra Especialidad */}
+                        {!esBaja && (
+                          <button
+                            type="button"
+                            onClick={() => handleDuplicarPaciente(paciente)}
+                            className="p-1.5 rounded-lg hover:bg-sky-50 text-zinc-400 hover:text-sky-600 transition-colors cursor-pointer"
+                            title="Derivar a otra especialidad (Duplicar ficha)"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
+                        )}
+
+                        {/* Botón Editar Paciente */}
                         {!esBaja && (
                           <button
                             type="button"
